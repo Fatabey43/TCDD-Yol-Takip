@@ -1,0 +1,6 @@
+{
+  "name": "Demiryolu KM & Nokta Takip",
+  "description": "Demiryolu hatları kilometre noktası takibi, harita konumu, yol tarifi navigasyonu, saha notları ve fotoğraf kayıt sistemi.",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

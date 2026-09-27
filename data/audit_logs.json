@@ -1,0 +1,22 @@
+[
+  {
+    "id": "log-1790372260542-w1ct",
+    "timestamp": "2026-09-25T21:37:40.542Z",
+    "action": "GİRİŞ_BAŞARISIZ",
+    "email": "bilinmeyen@tcdd.gov.tr",
+    "status": "failed",
+    "details": "Kayıtsız e-posta adresi ile oturum açılmaya çalışıldı (401 - Kayıt Bulunamadı)",
+    "ip": "127.0.0.1"
+  },
+  {
+    "id": "log-1790372253073-iclt",
+    "timestamp": "2026-09-25T21:37:33.073Z",
+    "action": "GİRİŞ_BAŞARILI",
+    "email": "bahadirefet@gmail.com",
+    "userName": "Bahadır Efet",
+    "role": "admin",
+    "status": "success",
+    "details": "Bahadır Efet (Yönetici) oturum açtı",
+    "ip": "127.0.0.1"
+  }
+]
