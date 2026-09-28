@@ -15,7 +15,6 @@ import {
   Building,
   CheckCircle2,
   Sparkles,
-  Zap,
 } from 'lucide-react';
 
 interface LoginScreenProps {
@@ -94,13 +93,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSuccessToast }) => {
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  // Quick fill helper for testing/fast sign in
-  const handleQuickLogin = (email: string, pass: string) => {
-    setLoginEmail(email);
-    setLoginPassword(pass);
-    setError(null);
   };
 
   return (
@@ -269,50 +261,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSuccessToast }) => {
                   </>
                 )}
               </button>
-
-              {/* Quick Select Buttons */}
-              <div className="pt-3 border-t border-slate-800">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
-                    <Zap className="w-3 h-3 text-amber-400" />
-                    Hızlı Giriş Seçenekleri
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-1.5 text-left">
-                  <button
-                    type="button"
-                    onClick={() => handleQuickLogin('bahadirefet@gmail.com', 'demiryolu123')}
-                    className="p-2 rounded-xl bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-[11px] transition-colors flex flex-col cursor-pointer"
-                  >
-                    <span className="font-bold text-purple-300 truncate">👑 Bahadır Efet</span>
-                    <span className="text-[10px] text-slate-400">Yönetici (Tam Yetki)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickLogin('turkmenhassan34@gmail.com', 'demiryolu123')}
-                    className="p-2 rounded-xl bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-[11px] transition-colors flex flex-col cursor-pointer"
-                  >
-                    <span className="font-bold text-purple-300 truncate">👑 Hasan Türkmen</span>
-                    <span className="text-[10px] text-slate-400">Yönetici (Sistem)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickLogin('saha@tcdd.gov.tr', 'saha123')}
-                    className="p-2 rounded-xl bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-[11px] transition-colors flex flex-col cursor-pointer"
-                  >
-                    <span className="font-bold text-sky-300 truncate">🛠️ Saha Şefliği</span>
-                    <span className="text-[10px] text-slate-400">Veri &amp; Fotoğraf</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickLogin('izleyici@tcdd.gov.tr', 'izleyici123')}
-                    className="p-2 rounded-xl bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-[11px] transition-colors flex flex-col cursor-pointer"
-                  >
-                    <span className="font-bold text-slate-300 truncate">👁️ Gözlemci</span>
-                    <span className="text-[10px] text-slate-400">Salt Okunur</span>
-                  </button>
-                </div>
-              </div>
             </form>
           ) : (
             /* TAB 2: REGISTER FORM */

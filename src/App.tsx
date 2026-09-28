@@ -38,6 +38,7 @@ import {
   DEFAULT_CATEGORY_COLORS,
 } from './utils/categoryColors.ts';
 import { sortPointsByKm, upsertPointInKmOrder } from './utils/kmUtils.ts';
+import { getStoredLines } from './utils/customLinesStorage.ts';
 import { List, Map as MapIcon, Loader2, Plus, Wifi, Smartphone, X } from 'lucide-react';
 import { TrainLoadingAnimation } from './components/TrainLoadingAnimation.tsx';
 import { TrainTransitionOverlay } from './components/TrainTransitionOverlay.tsx';
@@ -360,14 +361,27 @@ export default function App() {
     setDeferredPrompt(null);
   };
 
-  // Extract distinct lines for filter
+  // Extract distinct lines for filter (combining points lines and user-added custom lines)
+  const [customStoredLines, setCustomStoredLines] = useState<string[]>(() => getStoredLines());
+
+  useEffect(() => {
+    const handleLinesUpdate = () => {
+      setCustomStoredLines(getStoredLines());
+    };
+    window.addEventListener('demiryolu_lines_updated', handleLinesUpdate);
+    return () => window.removeEventListener('demiryolu_lines_updated', handleLinesUpdate);
+  }, []);
+
   const availableLines = useMemo(() => {
     const lines = new Set<string>();
     points.forEach((p) => {
       if (p.lineName) lines.add(p.lineName);
     });
+    customStoredLines.forEach((l) => {
+      if (l) lines.add(l);
+    });
     return Array.from(lines).sort();
-  }, [points]);
+  }, [points, customStoredLines]);
 
   // Point count per category for tab bar badges
   const pointCountsByCategory = useMemo(() => {
@@ -873,6 +887,7 @@ export default function App() {
         editingPoint={editingPoint}
         initialCoords={clickCoords}
         onDelete={handleDeletePoint}
+        allExistingLines={availableLines}
         onPickOnMap={() => {
           setIsFormModalOpen(false);
           if (viewMode === 'list') {

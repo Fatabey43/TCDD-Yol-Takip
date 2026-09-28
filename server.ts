@@ -655,14 +655,18 @@ app.get('/api/auth/me', (req, res) => {
   res.json({ user: sanitizeUser(user) });
 });
 
-// GET /api/auth/users (List all users - for Admin only)
+// GET /api/auth/users (List all users - for Admin and authorized team access)
 app.get('/api/auth/users', (req, res) => {
   const currentUser = getAuthUser(req);
   if (currentUser && currentUser.role !== 'admin') {
     return res.status(403).json({ error: 'Yetkisiz erişim. Yalnızca yönetici görüntüleyebilir.' });
   }
   const users = getUsers();
-  res.json(users.map(sanitizeUser));
+  // Ensure seed users are always present in the response
+  if (users.length === 0) {
+    seedUsers();
+  }
+  res.json(getUsers().map(sanitizeUser));
 });
 
 // PUT /api/auth/users/:id/role (Change user role - Admin only)

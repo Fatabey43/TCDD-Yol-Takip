@@ -316,3 +316,43 @@ export function exportToKML(points: RailwayPoint[]) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+/**
+ * Exports a single point to KML file and triggers download
+ * Opens immediately in Google Earth Pro / Google Earth Desktop or Mobile app
+ */
+export function exportSinglePointKML(point: RailwayPoint) {
+  const cleanTitle = (point.title || 'Nokta').replace(/[^\w\s\u00C0-\u017F+-]/gi, '_');
+  const kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>${point.title}</name>
+    <description>Demiryolu KM Noktası - ${point.lineName || ''}</description>
+    <Style id="railwayPointIcon">
+      <IconStyle>
+        <scale>1.3</scale>
+        <Icon>
+          <href>http://maps.google.com/mapfiles/kml/shapes/rail.png</href>
+        </Icon>
+      </IconStyle>
+    </Style>
+    <Placemark>
+      <name><![CDATA[${point.title}]]></name>
+      <description><![CDATA[<b>Hat:</b> ${point.lineName || '-'}<br/><b>KM:</b> ${point.kmValue || '-'}<br/><b>Mevki:</b> ${point.locationDesc || '-'}<br/><b>Açıklama:</b> ${point.description || '-'}<br/><b>Koordinat:</b> ${point.lat}, ${point.lng}]]></description>
+      <styleUrl>#railwayPointIcon</styleUrl>
+      <Point>
+        <coordinates>${point.lng},${point.lat},0</coordinates>
+      </Point>
+    </Placemark>
+  </Document>
+</kml>`;
+
+  const blob = new Blob([kmlContent], { type: 'application/vnd.google-earth.kml+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${cleanTitle}.kml`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+

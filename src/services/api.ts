@@ -227,13 +227,29 @@ purgeDeletedAndDefaultPoints();
 
 /**
  * Ensures KM information is extracted and never empty if present in title
+ * Also normalizes legacy line name "Kayıtlı Demiryolu Hattı" to "Eskişehir-Konya"
  */
 function normalizePoint(p: RailwayPoint): RailwayPoint {
   const km = (p.kmValue && p.kmValue.trim())
     ? p.kmValue.trim()
     : extractKmFromText(p.title);
+
+  let lineName = p.lineName;
+  let description = p.description || '';
+
+  if (lineName === 'Kayıtlı Demiryolu Hattı') {
+    lineName = 'Eskişehir-Konya';
+  }
+  if (description.includes('Kayıtlı Demiryolu Hattı')) {
+    description = description
+      .replace(/Hat:\s*Kayıtlı Demiryolu Hattı/g, 'Hat: Eskişehir-Konya')
+      .replace(/Kayıtlı Demiryolu Hattı/g, 'Eskişehir-Konya');
+  }
+
   return {
     ...p,
+    lineName,
+    description,
     kmValue: km,
     notes: Array.isArray(p.notes) ? p.notes : [],
     photos: Array.isArray(p.photos) ? p.photos : [],

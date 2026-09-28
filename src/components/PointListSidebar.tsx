@@ -160,7 +160,7 @@ export const PointListSidebar: React.FC<PointListSidebarProps> = ({
                     id={`quick-earth-${point.id}-btn`}
                     href={
                       !isNaN(Number(point.lat)) && !isNaN(Number(point.lng))
-                        ? `https://earth.google.com/web/@${Number(point.lat).toFixed(7)},${Number(point.lng).toFixed(7)},350a,750d,35y,0h,45t,0r`
+                        ? `https://earth.google.com/web/search/${Number(point.lat).toFixed(7)},${Number(point.lng).toFixed(7)}`
                         : '#'
                     }
                     target="_blank"
@@ -169,17 +169,13 @@ export const PointListSidebar: React.FC<PointListSidebarProps> = ({
                       e.stopPropagation();
                       const lat = Number(point.lat);
                       const lng = Number(point.lng);
-                      if (isNaN(lat) || isNaN(lng)) {
+                      if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) {
                         e.preventDefault();
-                        return;
+                      } else if (navigator.clipboard) {
+                        navigator.clipboard.writeText(`${lat.toFixed(6)}, ${lng.toFixed(6)}`).catch(() => {});
                       }
-                      window.open(
-                        `https://earth.google.com/web/@${lat.toFixed(7)},${lng.toFixed(7)},350a,750d,35y,0h,45t,0r`,
-                        '_blank',
-                        'noopener,noreferrer'
-                      );
                     }}
-                    title="3D Google Earth'te Doğrudan Konuma Uç"
+                    title="Google Earth Web'de bu koordinatı ara ve aç"
                     className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition-colors cursor-pointer flex items-center justify-center"
                   >
                     <Globe className="w-3.5 h-3.5" />

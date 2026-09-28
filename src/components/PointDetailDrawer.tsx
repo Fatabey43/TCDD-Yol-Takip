@@ -6,6 +6,7 @@ import { compressImage } from '../utils/imageCompressor.ts';
 import { TextFormattingToolbar } from './TextFormattingToolbar.tsx';
 import { DeleteConfirmModal } from './DeleteConfirmModal.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { exportSinglePointKML } from '../utils/kmlParser.ts';
 import {
   Navigation,
   Copy,
@@ -26,6 +27,7 @@ import {
   Image as ImageIcon,
   Ruler,
   Globe,
+  Download,
 } from 'lucide-react';
 
 interface PointDetailDrawerProps {
@@ -169,10 +171,18 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
   const lngNum = typeof point.lng === 'number' ? point.lng : parseFloat(String(point.lng));
   const hasValidCoords = !isNaN(latNum) && !isNaN(lngNum) && latNum !== 0 && lngNum !== 0;
 
-  // Google Earth 3D Direct Fly URL (swoops in 3D right above coordinates at 45° angle)
-  const googleEarthFlyUrl = hasValidCoords
-    ? `https://earth.google.com/web/@${latNum.toFixed(7)},${lngNum.toFixed(7)},350a,750d,35y,0h,45t,0r`
+  // Google Earth Direct Search URL (Search endpoint reliably pins and zooms to exact coordinates without session/cache override)
+  const googleEarthSearchUrl = hasValidCoords
+    ? `https://earth.google.com/web/search/${latNum.toFixed(7)},${lngNum.toFixed(7)}`
     : '';
+
+  // Google Earth 3D Direct Fly URL (alternative deep-link)
+  const googleEarthFlyUrl = hasValidCoords
+    ? `https://earth.google.com/web/@${latNum.toFixed(7)},${lngNum.toFixed(7)},250a,600d,35y,0h,45t,0r/data=KAI`
+    : '';
+
+  // Preferred Earth URL: Search endpoint is 100% reliable for pinpointing exact coordinates
+  const primaryEarthUrl = googleEarthSearchUrl || googleEarthFlyUrl;
 
   // Google Maps Satellite view with forced satellite imagery mode & distinct RED PIN marker (&t=k)
   const mapsSatellitePinUrl = hasValidCoords
@@ -184,25 +194,17 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
     ? `https://www.google.com/maps/dir/?api=1&destination=${latNum.toFixed(7)},${lngNum.toFixed(7)}`
     : '';
 
-  // Open Google Maps navigation (direct window open)
-  const handleOpenNavigation = (e?: React.MouseEvent) => {
-    if (e) e.preventDefault();
-    if (!hasValidCoords) return;
-    window.open(navigationUrl, '_blank', 'noopener,noreferrer');
+  // Auto copy coords to clipboard when opening Earth so user can paste into Earth search if Earth web cache acts up
+  const handleOpenEarthClick = () => {
+    if (hasValidCoords && navigator.clipboard) {
+      navigator.clipboard.writeText(`${latNum.toFixed(6)}, ${lngNum.toFixed(6)}`).catch(() => {});
+    }
   };
 
-  // Open 3D Google Earth Web directly
-  const handleOpenGoogleEarth = (e?: React.MouseEvent) => {
-    if (e) e.preventDefault();
-    if (!hasValidCoords) return;
-    window.open(googleEarthFlyUrl, '_blank', 'noopener,noreferrer');
-  };
-
-  // Open Satellite Pin directly
-  const handleOpenSatellitePin = (e?: React.MouseEvent) => {
-    if (e) e.preventDefault();
-    if (!hasValidCoords) return;
-    window.open(mapsSatellitePinUrl, '_blank', 'noopener,noreferrer');
+  // Export single point KML for instant Google Earth Desktop / Mobile App opening
+  const handleDownloadKML = () => {
+    if (!point || !hasValidCoords) return;
+    exportSinglePointKML(point);
   };
 
   // Copy coordinates
@@ -380,7 +382,6 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
                 href={navigationUrl || '#'}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={handleOpenNavigation}
                 className="flex items-center justify-center gap-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-2.5 py-1.5 rounded-lg font-semibold text-xs shadow-sm transition-all active:scale-[0.98] cursor-pointer"
                 title="Google Haritalar Canlı Yol Tarifi"
               >
@@ -392,12 +393,12 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
               {/* Google Earth 3D Görünüm (Doğrudan 3D uçuş URL'si ile tam koordinata gider) */}
               <a
                 id="open-google-earth-drawer-btn"
-                href={googleEarthFlyUrl || '#'}
+                href={primaryEarthUrl || '#'}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={handleOpenGoogleEarth}
+                onClick={handleOpenEarthClick}
                 className="flex items-center justify-center gap-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white px-2.5 py-1.5 rounded-lg font-bold text-xs shadow-sm transition-all active:scale-[0.98] cursor-pointer"
-                title="Google Earth 3D'de doğrudan bu koordinata uç"
+                title="Google Earth 3D'de doğrudan bu koordinata uç (Koordinat panoya da kopyalanır)"
               >
                 <Globe className="w-3.5 h-3.5 text-white" />
                 <span>Earth 3D</span>
@@ -410,7 +411,6 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
                 href={mapsSatellitePinUrl || '#'}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={handleOpenSatellitePin}
                 className="flex items-center justify-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-100 px-2 py-1.5 rounded-lg font-medium text-xs border border-slate-700 transition-all cursor-pointer"
                 title="Kırmızı işaretçi pinli Google Uydu haritasını aç"
               >
@@ -611,20 +611,47 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800">
-                    {/* Google Earth'e Git Butonu - Doğrudan 3D uçuş URL'si */}
+                    {/* Google Earth'e Git Butonu - Doğrudan arama & koordinat sabitleme */}
                     <a
                       id="drawer-info-open-google-earth-btn"
-                      href={googleEarthFlyUrl || '#'}
+                      href={primaryEarthUrl || '#'}
                       target="_blank"
                       rel="noopener noreferrer"
-                      onClick={handleOpenGoogleEarth}
+                      onClick={handleOpenEarthClick}
                       className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-3.5 py-2 rounded-xl font-bold text-xs shadow-md transition-all active:scale-[0.98] cursor-pointer"
-                      title="Google Earth 3D uygulamasında bu noktaya uç ve görüntüle"
+                      title="Google Earth 3D Web uygulamasında bu noktayı ara ve görüntüle (Koordinat panoya da kopyalanır)"
                     >
                       <Globe className="w-4 h-4 text-white" />
-                      <span>Google Earth 3D'ye Git</span>
+                      <span>Google Earth Web'de Aç</span>
                       <ExternalLink className="w-3.5 h-3.5 opacity-80" />
                     </a>
+
+                    {/* Google Earth 3D Uçuş Bağlantısı */}
+                    {googleEarthFlyUrl && (
+                      <a
+                        id="drawer-info-open-earth-fly-btn"
+                        href={googleEarthFlyUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-emerald-950/90 hover:bg-emerald-900 text-emerald-300 hover:text-white px-3 py-2 rounded-xl font-semibold text-xs border border-emerald-700/60 transition-all active:scale-[0.98] cursor-pointer shadow-xs"
+                        title="3D Uçuş Modunda Aç (@lat,lng kamera açısı)"
+                      >
+                        <Navigation className="w-3.5 h-3.5 text-emerald-400 rotate-45" />
+                        <span>3D Uçuş</span>
+                      </a>
+                    )}
+
+                    {/* Google Earth KML İndir / Earth Desktop-Mobil'de Aç */}
+                    <button
+                      type="button"
+                      id="drawer-info-kml-download-btn"
+                      onClick={handleDownloadKML}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white px-3 py-2 rounded-xl font-semibold text-xs border border-slate-700 transition-all active:scale-[0.98] cursor-pointer shadow-xs"
+                      title="Bu noktanın KML dosyasını indirip doğrudan Google Earth Pro / Masaüstü uygulamasında tam nokta olarak açın"
+                    >
+                      <Download className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>KML İndir (Earth Pro)</span>
+                    </button>
 
                     {/* Google Maps Kırmızı Pimli Uydu Görünümü */}
                     <a
@@ -632,7 +659,6 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
                       href={mapsSatellitePinUrl || '#'}
                       target="_blank"
                       rel="noopener noreferrer"
-                      onClick={handleOpenSatellitePin}
                       className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white px-3 py-2 rounded-xl font-semibold text-xs border border-slate-700 transition-all active:scale-[0.98] cursor-pointer"
                       title="Google Haritalar Uydu Katmanında Kırmızı İşaretçi ile Aç"
                     >

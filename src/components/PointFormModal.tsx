@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { RailwayPoint, RailwayPointCategory, TextStyleConfig } from '../types.ts';
 import { DEFAULT_TEXT_STYLE, getTextStyleInline } from '../utils/textStyleHelper.ts';
 import { extractKmFromText, DEFAULT_CATEGORY_COLORS } from '../utils/categoryColors.ts';
+import { getStoredLines, addCustomLine, removeCustomLine } from '../utils/customLinesStorage.ts';
 import { TextFormattingToolbar } from './TextFormattingToolbar.tsx';
 import { DeleteConfirmModal } from './DeleteConfirmModal.tsx';
-import { X, Locate, Train, Save, Trash2, MapPin, Crosshair } from 'lucide-react';
+import { X, Locate, Train, Save, Trash2, MapPin, Crosshair, Plus, Check } from 'lucide-react';
 
 interface PointFormModalProps {
   isOpen: boolean;
@@ -14,21 +15,8 @@ interface PointFormModalProps {
   initialCoords?: { lat: number; lng: number } | null;
   onDelete?: (pointId: string) => void;
   onPickOnMap?: () => void;
+  allExistingLines?: string[];
 }
-
-const COMMON_LINES = [
-  'Ankara - Eskişehir YHT Hattı',
-  'Ankara - İstanbul YHT Hattı',
-  'Ankara - Konya YHT Hattı',
-  'Ankara - Sivas YHT Hattı',
-  'Haydarpaşa - Ankara Ana Hattı',
-  'İzmir - Menemen - Aliağa (İZBAN)',
-  'İzmir - Aydın - Denizli Hattı',
-  'Adana - Mersin Hızlı Tren Hattı',
-  'Irmak - Karabük - Zonguldak Hattı',
-  'Eskişehir - Afyonkarahisar - Konya Hattı',
-  'Sivas - Erzincan - Kars Hattı',
-];
 
 const CATEGORIES: { id: RailwayPointCategory; label: string }[] = [
   { id: 'km_marker', label: 'Demiryolu Kilometre Taşı' },
@@ -49,11 +37,14 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
   initialCoords,
   onDelete,
   onPickOnMap,
+  allExistingLines = [],
 }) => {
   const [title, setTitle] = useState('');
   const [kmValue, setKmValue] = useState('');
-  const [lineName, setLineName] = useState('Ankara - Eskişehir YHT Hattı');
-  const [customLine, setCustomLine] = useState('');
+  const [lineName, setLineName] = useState('');
+  const [savedLines, setSavedLines] = useState<string[]>([]);
+  const [isAddingNewLine, setIsAddingNewLine] = useState(false);
+  const [newLineInput, setNewLineInput] = useState('');
   const [category, setCategory] = useState<RailwayPointCategory>('km_marker');
   const [locationDesc, setLocationDesc] = useState('');
   const [lat, setLat] = useState<string>('');
@@ -67,20 +58,24 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Load and refresh available custom lines list
+  const refreshLinesList = () => {
+    const fromStorage = getStoredLines();
+    const merged = Array.from(new Set([...allExistingLines, ...fromStorage].map((l) => l.trim()).filter(Boolean))).sort();
+    setSavedLines(merged);
+    return merged;
+  };
+
   useEffect(() => {
     if (!isOpen) return;
+
+    const currentAvailable = refreshLinesList();
 
     if (editingPoint) {
       setTitle(editingPoint.title);
       const initialKm = editingPoint.kmValue || extractKmFromText(editingPoint.title);
       setKmValue(initialKm);
-      if (COMMON_LINES.includes(editingPoint.lineName)) {
-        setLineName(editingPoint.lineName);
-        setCustomLine('');
-      } else {
-        setLineName('other');
-        setCustomLine(editingPoint.lineName);
-      }
+      setLineName(editingPoint.lineName || '');
       setCategory(editingPoint.category);
       setLocationDesc(editingPoint.locationDesc || '');
       setLat(editingPoint.lat.toString());
@@ -89,6 +84,10 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
       setTextStyle(editingPoint.textStyle || DEFAULT_TEXT_STYLE);
       setTitleTextStyle(editingPoint.titleTextStyle || { ...DEFAULT_TEXT_STYLE, fontWeight: 'bold' });
     } else {
+      // If we have saved lines, default to the first one or leave empty for user to type
+      if (!lineName && currentAvailable.length > 0) {
+        setLineName(currentAvailable[0]);
+      }
       // If we just got initialCoords (e.g. from map click), update lat/lng without erasing what user already typed!
       if (initialCoords) {
         setLat(initialCoords.lat.toFixed(6));
@@ -96,7 +95,19 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
       }
     }
     setFormError('');
-  }, [editingPoint, initialCoords, isOpen]);
+    setIsAddingNewLine(false);
+    setNewLineInput('');
+  }, [editingPoint, initialCoords, isOpen, allExistingLines]);
+
+  const handleAddNewLine = () => {
+    const trimmed = newLineInput.trim();
+    if (!trimmed) return;
+    addCustomLine(trimmed);
+    const updated = refreshLinesList();
+    setLineName(trimmed);
+    setNewLineInput('');
+    setIsAddingNewLine(false);
+  };
 
   // Auto-fill title if empty when typing KM, or extract KM if user types title
   const handleKmChange = (val: string) => {
@@ -155,8 +166,13 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
       return;
     }
 
-    const finalLine = lineName === 'other' ? (customLine.trim() || 'Özel Demiryolu Hattı') : lineName;
+    const finalLine = lineName.trim() || 'Genel Demiryolu Hattı';
     const resolvedKm = (kmValue && kmValue.trim()) ? kmValue.trim() : extractKmFromText(title.trim());
+
+    // Save line to saved lines if new
+    if (finalLine && finalLine !== 'Genel Demiryolu Hattı') {
+      addCustomLine(finalLine);
+    }
 
     setIsSaving(true);
     try {
@@ -200,11 +216,12 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
     if (!editingPoint) {
       setTitle('');
       setKmValue('');
-      setCustomLine('');
       setLocationDesc('');
       setDescription('');
       setLat('');
       setLng('');
+      setIsAddingNewLine(false);
+      setNewLineInput('');
     }
     onClose();
   };
@@ -323,34 +340,122 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
             </div>
           </div>
 
-          {/* Line Selection */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Demiryolu Hattı
-            </label>
-            <select
-              id="form-line-select"
-              value={lineName}
-              onChange={(e) => setLineName(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-sky-500 focus:outline-none"
-            >
-              {COMMON_LINES.map((line) => (
-                <option key={line} value={line}>
-                  {line}
-                </option>
-              ))}
-              <option value="other">Diğer (Özel Hat Yazın)...</option>
-            </select>
-            {lineName === 'other' && (
-              <input
-                id="form-custom-line-input"
-                type="text"
-                placeholder="Hat Adını Yazınız"
-                value={customLine}
-                onChange={(e) => setCustomLine(e.target.value)}
-                className="mt-2 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none"
-              />
-            )}
+          {/* Line Selection & Hat Ekle Bölümü */}
+          <div className="bg-slate-50/70 p-3 rounded-2xl border border-slate-200">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Train className="w-3.5 h-3.5 text-sky-600" />
+                <span>Demiryolu Hattı</span>
+              </label>
+
+              {!isAddingNewLine ? (
+                <button
+                  type="button"
+                  id="form-add-line-btn"
+                  onClick={() => setIsAddingNewLine(true)}
+                  className="text-[11px] font-bold text-sky-700 hover:text-sky-900 bg-sky-100/80 hover:bg-sky-200/80 px-2 py-0.5 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                  title="Yeni demiryolu hattı tanımla"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>+ Hat Ekle</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsAddingNewLine(false)}
+                  className="text-[11px] text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                >
+                  Vazgeç
+                </button>
+              )}
+            </div>
+
+            {/* Yeni Hat Ekleme Girişi */}
+            {isAddingNewLine ? (
+              <div className="flex items-center gap-1.5 mb-2 animate-in fade-in duration-150">
+                <input
+                  id="form-new-line-input"
+                  type="text"
+                  autoFocus
+                  placeholder="İstediğiniz Hat Adını Yazın (Örn: Konya - Karaman Hattı)"
+                  value={newLineInput}
+                  onChange={(e) => setNewLineInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddNewLine();
+                    }
+                  }}
+                  className="flex-1 px-3 py-2 border-2 border-sky-400 bg-white rounded-xl text-xs focus:ring-2 focus:ring-sky-500 focus:outline-none font-medium"
+                />
+                <button
+                  type="button"
+                  id="form-confirm-add-line-btn"
+                  onClick={handleAddNewLine}
+                  disabled={!newLineInput.trim()}
+                  className="bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1 transition-colors cursor-pointer shrink-0 shadow-xs"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Kaydet</span>
+                </button>
+              </div>
+            ) : null}
+
+            {/* Hat Seçimi / Girişi */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  id="form-line-text-input"
+                  type="text"
+                  list="existing-lines-datalist"
+                  placeholder="Hat adını yazın veya listeden seçin..."
+                  value={lineName}
+                  onChange={(e) => setLineName(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm bg-white font-medium text-slate-800 focus:ring-2 focus:ring-sky-500 focus:outline-none shadow-xs"
+                />
+                <datalist id="existing-lines-datalist">
+                  {savedLines.map((line) => (
+                    <option key={line} value={line} />
+                  ))}
+                </datalist>
+
+                {lineName && savedLines.includes(lineName) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      removeCustomLine(lineName);
+                      refreshLinesList();
+                      setLineName('');
+                    }}
+                    title="Bu hattı listeden kaldır"
+                    className="p-2 text-slate-400 hover:text-red-600 rounded-xl hover:bg-red-50 border border-slate-200 transition-colors cursor-pointer shrink-0"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Hızlı Seçim Hapları (Varsa) */}
+              {savedLines.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                  <span className="text-[10px] text-slate-400 font-semibold">Kayıtlı Hatlar:</span>
+                  {savedLines.slice(0, 5).map((l) => (
+                    <button
+                      key={l}
+                      type="button"
+                      onClick={() => setLineName(l)}
+                      className={`text-[11px] px-2 py-0.5 rounded-lg border transition-all cursor-pointer truncate max-w-[180px] ${
+                        lineName === l
+                          ? 'bg-sky-600 text-white border-sky-600 font-bold shadow-xs'
+                          : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Category & Location Description */}

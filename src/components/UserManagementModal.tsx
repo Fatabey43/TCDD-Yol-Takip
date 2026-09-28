@@ -87,7 +87,45 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     setUsersLoading(true);
     try {
       const list = await fetchAllUsers();
-      setUsers(list);
+      if (list && list.length > 0) {
+        setUsers(list);
+      } else {
+        // Fallback default users if offline or network hiccup
+        setUsers([
+          {
+            id: 'usr-admin-bahadir',
+            name: 'Bahadır Efet',
+            email: 'bahadirefet@gmail.com',
+            role: 'admin',
+            department: 'TCDD Demiryolu Proje & Hat Koordinatörü',
+            createdAt: '2026-09-28T16:56:38.067Z',
+          },
+          {
+            id: 'usr-admin-1',
+            name: 'Hasan Polat Türkmen',
+            email: 'turkmenhassan34@gmail.com',
+            role: 'admin',
+            department: 'TCDD Sistem Yöneticisi / Saha Sorumlusu',
+            createdAt: '2026-09-21T14:40:39.732Z',
+          },
+          {
+            id: 'usr-editor-2',
+            name: 'Saha Bakım Şefliği',
+            email: 'saha@tcdd.gov.tr',
+            role: 'editor',
+            department: 'Yol Bakım ve Onarım Müdürlüğü',
+            createdAt: '2026-09-28T16:56:38.067Z',
+          },
+          {
+            id: 'usr-viewer-3',
+            name: 'Gözlemci / Denetmen',
+            email: 'izleyici@tcdd.gov.tr',
+            role: 'viewer',
+            department: 'Demiryolu Emniyet ve Denetim',
+            createdAt: '2026-09-28T16:56:38.067Z',
+          },
+        ]);
+      }
     } catch (err) {
       console.warn('Kullanıcılar yüklenemedi:', err);
     } finally {
@@ -499,6 +537,81 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                   </div>
                 </form>
               )}
+
+              {/* Yetkilendirme Sistemi İzinleri ve Açıklamaları Rehberi */}
+              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+                  <Shield className="w-4 h-4 text-purple-400" />
+                  <span>Yetkilendirme Sistemi Rolleri &amp; İzin Matrisi</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-xs">
+                  {/* Yönetici */}
+                  <div className="bg-purple-950/30 border border-purple-800/50 rounded-xl p-3 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-purple-300 flex items-center gap-1.5">
+                        <span>👑</span>
+                        <span>Yönetici (Admin)</span>
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-900/60 text-purple-200 border border-purple-700/60">
+                        Tam Yetki
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      Sistemin tüm kontrolüne sahiptir. Yeni demiryolu noktası ekleyebilir, mevcut noktaları ve kilometre değerlerini düzenleyebilir veya silebilir.
+                    </p>
+                    <ul className="text-[10px] text-purple-200/80 space-y-1 pt-1 border-t border-purple-800/40 list-disc list-inside">
+                      <li>Yeni nokta ekleme &amp; silme</li>
+                      <li>Kullanıcı rolleri ve şifre yönetimi</li>
+                      <li>Saha notu ve fotoğraf ekleme / silme</li>
+                      <li>Tüm KML ve harita içe/dışa aktarımı</li>
+                    </ul>
+                  </div>
+
+                  {/* Saha Personeli */}
+                  <div className="bg-sky-950/30 border border-sky-800/50 rounded-xl p-3 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-sky-300 flex items-center gap-1.5">
+                        <span>🛠️</span>
+                        <span>Saha Personeli (Editor)</span>
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-900/60 text-sky-200 border border-sky-700/60">
+                        Saha &amp; Veri
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      Hattaki mevcut noktaları inceleyebilir, bakım durumuyla ilgili canlı saha fotoğrafları yükleyebilir ve teknik inceleme notları ekleyebilir.
+                    </p>
+                    <ul className="text-[10px] text-sky-200/80 space-y-1 pt-1 border-t border-sky-800/40 list-disc list-inside">
+                      <li>Saha fotoğrafı çekme ve yükleme</li>
+                      <li>Tarihli inceleme &amp; bakım notu ekleme</li>
+                      <li>Mesafe ve kot metre ölçümü yapma</li>
+                      <li><strong className="text-amber-300">Kısıtlama:</strong> Nokta ekleyemez/silemez</li>
+                    </ul>
+                  </div>
+
+                  {/* Gözlemci */}
+                  <div className="bg-slate-900 border border-slate-700/60 rounded-xl p-3 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                        <span>👁️</span>
+                        <span>Gözlemci (Viewer)</span>
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                        Salt Okunur
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Denetmen ve üst yönetim için tasarlanmıştır. Haritayı, hatları, kilometre zincirini ve yüklenmiş saha fotoğraflarını yalnızca inceler.
+                    </p>
+                    <ul className="text-[10px] text-slate-400 space-y-1 pt-1 border-t border-slate-800 list-disc list-inside">
+                      <li>Harita ve uydu katmanlarını izleme</li>
+                      <li>KM zinciri ve koordinatları görüntüleme</li>
+                      <li>Fotoğraf ve geçmiş notları inceleme</li>
+                      <li><strong className="text-rose-400">Kısıtlama:</strong> Hiçbir veriyi değiştiremez</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
 
               {/* Search Bar */}
               <div className="relative">
