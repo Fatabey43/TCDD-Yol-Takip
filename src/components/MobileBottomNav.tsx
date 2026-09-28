@@ -10,6 +10,7 @@ interface MobileBottomNavProps {
   onToggleSearch: () => void;
   isSearchActive: boolean;
   onOpenMenu: () => void;
+  isAddMode?: boolean;
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
@@ -20,6 +21,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   onToggleSearch,
   isSearchActive,
   onOpenMenu,
+  isAddMode,
 }) => {
   const { canAddPoint } = useAuth();
 
@@ -63,10 +65,22 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             onClick={onOpenAddModal}
             className="flex flex-col items-center justify-center -mt-4 flex-none px-2 group"
           >
-            <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-sky-600 to-blue-500 text-white flex items-center justify-center shadow-lg shadow-sky-500/40 group-active:scale-95 transition-transform border-2 border-slate-900">
+            <div
+              className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg group-active:scale-95 transition-all border-2 border-slate-900 ${
+                isAddMode
+                  ? 'bg-gradient-to-tr from-amber-500 to-amber-400 text-slate-950 shadow-amber-500/50 ring-2 ring-amber-300 animate-pulse'
+                  : 'bg-gradient-to-tr from-sky-600 to-blue-500 text-white shadow-sky-500/40'
+              }`}
+            >
               <Plus className="w-6 h-6 stroke-[2.5]" />
             </div>
-            <span className="text-[10px] font-bold text-sky-400 mt-1">Ekle</span>
+            <span
+              className={`text-[10px] font-bold mt-1 ${
+                isAddMode ? 'text-amber-400' : 'text-sky-400'
+              }`}
+            >
+              {isAddMode ? 'İşaretle' : 'Ekle'}
+            </span>
           </button>
         )}
 

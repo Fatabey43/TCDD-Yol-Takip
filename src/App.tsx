@@ -17,6 +17,7 @@ import { exportToJSON } from './utils/kmlParser.ts';
 import { RailwayMap } from './components/RailwayMap.tsx';
 import { PointDetailDrawer } from './components/PointDetailDrawer.tsx';
 import { PointFormModal } from './components/PointFormModal.tsx';
+import { PointAddChoiceModal } from './components/PointAddChoiceModal.tsx';
 import { ImportExportModal } from './components/ImportExportModal.tsx';
 import { MobileInstallModal } from './components/MobileInstallModal.tsx';
 import { Header } from './components/Header.tsx';
@@ -54,6 +55,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'map' | 'list' | 'palette'>('map');
 
   // Modals state
+  const [isAddChoiceOpen, setIsAddChoiceOpen] = useState<boolean>(false);
   const [isFormModalOpen, setIsFormModalOpen] = useState<boolean>(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
   const [isUserMgmtOpen, setIsUserMgmtOpen] = useState<boolean>(false);
@@ -449,15 +451,65 @@ export default function App() {
     }
     setEditingPoint(null);
     setClickCoords({ lat, lng });
+    setIsAddMode(false);
     setIsFormModalOpen(true);
+    showToast(`📍 Haritadan konum alındı (${lat.toFixed(5)}, ${lng.toFixed(5)})`);
   };
 
-  // Open add modal
+  // Open add point choices modal (Allows choosing 'Haritadan Seç', 'GPS Konumunu Al', or 'Formu Aç')
   const handleOpenAddModal = () => {
     if (!canAddPoint) {
       showToast('Yeni nokta ekleme yetkisi yalnızca Sistem Yöneticisine aittir. Saha personeli nokta ekleyemez.');
       return;
     }
+    setIsAddChoiceOpen(true);
+  };
+
+  // Choice 1: Haritadan Seç ve Otomatik Konum Al
+  const handleStartMapPick = () => {
+    setIsAddChoiceOpen(false);
+    setIsFormModalOpen(false);
+    setEditingPoint(null);
+    if (viewMode === 'list') {
+      setViewMode('map');
+      setActiveTab('map');
+    }
+    setIsAddMode(true);
+    showToast('📍 Haritada eklemek istediğiniz demiryolu konumuna dokunun.');
+  };
+
+  // Choice 2: Canlı GPS Konumunu Al ve Formu Aç
+  const handleUseGpsDirect = () => {
+    setIsAddChoiceOpen(false);
+    if (!navigator.geolocation) {
+      showToast('Cihazınızda GPS konum servisi bulunamadı.');
+      handleOpenAddModalDirect();
+      return;
+    }
+    showToast('📡 Canlı GPS koordinatları alınıyor...');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setEditingPoint(null);
+        setClickCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setIsAddMode(false);
+        setIsFormModalOpen(true);
+        showToast('📍 Mevcut GPS konumunuz forma otomatik aktarıldı.');
+      },
+      (err) => {
+        showToast('GPS konumu alınamadı: ' + err.message);
+        handleOpenAddModalDirect();
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  // Choice 3: Formu doğrudan aç (Manuel giriş için)
+  const handleOpenAddModalDirect = () => {
+    if (!canAddPoint) {
+      showToast('Yeni nokta ekleme yetkisi yalnızca Sistem Yöneticisine aittir.');
+      return;
+    }
+    setIsAddChoiceOpen(false);
     setEditingPoint(null);
     setClickCoords(null);
     setIsFormModalOpen(true);
@@ -804,6 +856,15 @@ export default function App() {
         </ErrorBoundary>
       </main>
 
+      {/* Point Add Method Choice Modal */}
+      <PointAddChoiceModal
+        isOpen={isAddChoiceOpen}
+        onClose={() => setIsAddChoiceOpen(false)}
+        onPickOnMap={handleStartMapPick}
+        onOpenManualForm={handleOpenAddModalDirect}
+        onUseGpsDirect={handleUseGpsDirect}
+      />
+
       {/* Add / Edit Point Modal */}
       <PointFormModal
         isOpen={isFormModalOpen}
@@ -812,6 +873,15 @@ export default function App() {
         editingPoint={editingPoint}
         initialCoords={clickCoords}
         onDelete={handleDeletePoint}
+        onPickOnMap={() => {
+          setIsFormModalOpen(false);
+          if (viewMode === 'list') {
+            setViewMode('map');
+            setActiveTab('map');
+          }
+          setIsAddMode(true);
+          showToast('📍 Haritada istediğiniz konuma dokunun, koordinatlar otomatik forma doldurulacaktır.');
+        }}
       />
 
       {/* Import / Export from Google Maps Modal */}
@@ -880,6 +950,7 @@ export default function App() {
         onToggleSearch={() => setIsMobileSearchOpen((prev) => !prev)}
         isSearchActive={Boolean(filters.search || filters.selectedLine !== 'all' || filters.category !== 'all')}
         onOpenMenu={() => setIsMobileMenuOpen(true)}
+        isAddMode={isAddMode}
       />
 
       {/* Mobile Actions Drawer Menu */}

@@ -271,11 +271,15 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 id="header-add-point-btn"
                 onClick={onOpenAddModal}
-                className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition-all active:scale-[0.98] cursor-pointer ml-0.5"
-                title="Yeni Demiryolu Noktası Ekle"
+                className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition-all active:scale-[0.98] cursor-pointer ml-0.5 ${
+                  isAddMode
+                    ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 ring-2 ring-amber-300 animate-pulse'
+                    : 'bg-sky-600 hover:bg-sky-500 text-white'
+                }`}
+                title="Haritadan tıkla & yeni demiryolu noktası ekle"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Nokta Ekle</span>
+                <span>{isAddMode ? 'Haritaya Tıklayın' : 'Nokta Ekle'}</span>
               </button>
             ) : null}
           </div>

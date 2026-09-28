@@ -3,7 +3,7 @@ import L from 'leaflet';
 import { RailwayPoint, RailwayPointCategory } from '../types.ts';
 import { CategoryColorConfig, DEFAULT_CATEGORY_COLORS, formatKmDisplay } from '../utils/categoryColors.ts';
 import { getDistanceMeters, formatMeterDistance, calculatePolylineMeasurements, LatLngPoint } from '../utils/measurement.ts';
-import { Layers, Locate, Maximize2, Plus, Train, Ruler, RotateCcw, Undo2, Check, RotateCw, Globe, ExternalLink } from 'lucide-react';
+import { Layers, Locate, Maximize2, Plus, Train, Ruler, RotateCcw, Undo2, Check, RotateCw, Globe, ExternalLink, MapPin, Crosshair } from 'lucide-react';
 
 interface RailwayMapProps {
   points: RailwayPoint[];
@@ -504,13 +504,23 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 
       {/* Mode Banner when Add Mode is Active */}
       {isAddMode && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-amber-500 text-slate-950 px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm shadow-xl flex items-center gap-2.5 border-2 border-amber-300 animate-pulse">
-          <Plus className="w-4 h-4 text-slate-950" />
-          <span>📍 Haritada eklemek istediğiniz demiryolu konumuna tıklayın</span>
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 px-5 py-3 rounded-2xl font-bold text-xs sm:text-sm shadow-2xl flex items-center gap-3 border-2 border-amber-300 ring-4 ring-amber-500/20 animate-in fade-in slide-in-from-top-4 duration-200">
+          <div className="w-8 h-8 rounded-xl bg-slate-950/10 flex items-center justify-center shrink-0">
+            <Crosshair className="w-5 h-5 text-slate-950 animate-spin" style={{ animationDuration: '6s' }} />
+          </div>
+          <div className="flex flex-col text-left">
+            <span className="text-[13px] sm:text-sm font-extrabold text-slate-950 leading-tight">
+              Haritada Bir Yere Tıklayın
+            </span>
+            <span className="text-[11px] font-medium text-amber-950 opacity-90">
+              Tıkladığınız yerin konumu ve koordinatları otomatik alınacaktır
+            </span>
+          </div>
           <button
             id="cancel-add-mode-btn"
+            type="button"
             onClick={() => setIsAddMode(false)}
-            className="ml-2 bg-slate-950 text-white text-xs px-2.5 py-1 rounded-xl hover:bg-slate-800 transition-colors shadow-sm cursor-pointer"
+            className="ml-2 bg-slate-950 hover:bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer"
           >
             İptal
           </button>

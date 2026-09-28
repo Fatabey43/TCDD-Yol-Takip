@@ -4,7 +4,7 @@ import { DEFAULT_TEXT_STYLE, getTextStyleInline } from '../utils/textStyleHelper
 import { extractKmFromText, DEFAULT_CATEGORY_COLORS } from '../utils/categoryColors.ts';
 import { TextFormattingToolbar } from './TextFormattingToolbar.tsx';
 import { DeleteConfirmModal } from './DeleteConfirmModal.tsx';
-import { X, Locate, Train, Save, Trash2 } from 'lucide-react';
+import { X, Locate, Train, Save, Trash2, MapPin, Crosshair } from 'lucide-react';
 
 interface PointFormModalProps {
   isOpen: boolean;
@@ -13,6 +13,7 @@ interface PointFormModalProps {
   editingPoint: RailwayPoint | null;
   initialCoords?: { lat: number; lng: number } | null;
   onDelete?: (pointId: string) => void;
+  onPickOnMap?: () => void;
 }
 
 const COMMON_LINES = [
@@ -47,6 +48,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
   editingPoint,
   initialCoords,
   onDelete,
+  onPickOnMap,
 }) => {
   const [title, setTitle] = useState('');
   const [kmValue, setKmValue] = useState('');
@@ -66,6 +68,8 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
   const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
+    if (!isOpen) return;
+
     if (editingPoint) {
       setTitle(editingPoint.title);
       const initialKm = editingPoint.kmValue || extractKmFromText(editingPoint.title);
@@ -85,22 +89,10 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
       setTextStyle(editingPoint.textStyle || DEFAULT_TEXT_STYLE);
       setTitleTextStyle(editingPoint.titleTextStyle || { ...DEFAULT_TEXT_STYLE, fontWeight: 'bold' });
     } else {
-      // New point
-      setTitle('');
-      setKmValue('');
-      setLineName(COMMON_LINES[0]);
-      setCustomLine('');
-      setCategory('km_marker');
-      setLocationDesc('');
-      setDescription('');
-      setTextStyle(DEFAULT_TEXT_STYLE);
-      setTitleTextStyle({ ...DEFAULT_TEXT_STYLE, fontWeight: 'bold' });
+      // If we just got initialCoords (e.g. from map click), update lat/lng without erasing what user already typed!
       if (initialCoords) {
         setLat(initialCoords.lat.toFixed(6));
         setLng(initialCoords.lng.toFixed(6));
-      } else {
-        setLat('');
-        setLng('');
       }
     }
     setFormError('');
@@ -204,13 +196,26 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
     }
   };
 
+  const handleModalClose = () => {
+    if (!editingPoint) {
+      setTitle('');
+      setKmValue('');
+      setCustomLine('');
+      setLocationDesc('');
+      setDescription('');
+      setLat('');
+      setLng('');
+    }
+    onClose();
+  };
+
   if (!isOpen) return null;
 
   return (
     <div
       id="point-form-modal"
       className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
-      onClick={onClose}
+      onClick={handleModalClose}
     >
       <div
         className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden my-6"
@@ -226,7 +231,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
           </div>
           <button
             id="modal-close-btn"
-            onClick={onClose}
+            onClick={handleModalClose}
             className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -238,6 +243,35 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
           {formError && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
               {formError}
+            </div>
+          )}
+
+          {/* Prominent Haritadan Seç & Otomatik Konum Al Option */}
+          {onPickOnMap && (
+            <div className="bg-gradient-to-r from-amber-500/15 via-amber-400/10 to-amber-500/5 border-2 border-amber-400/80 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center shrink-0 shadow-sm">
+                  <Crosshair className="w-5 h-5 stroke-[2.5]" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-extrabold text-xs sm:text-sm text-amber-950">Haritadan Seç &amp; Konum Al</span>
+                    <span className="text-[10px] font-bold bg-amber-400 text-slate-950 px-1.5 py-0.2 rounded">Tavsiye Edilen</span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 truncate">
+                    Haritada hatta dokunarak koordinatı otomatik alabilirsiniz
+                  </p>
+                </div>
+              </div>
+              <button
+                id="form-top-pick-map-btn"
+                type="button"
+                onClick={onPickOnMap}
+                className="shrink-0 bg-amber-400 hover:bg-amber-300 active:scale-95 text-slate-950 text-xs font-extrabold px-3 py-2 rounded-xl border border-amber-500 shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Crosshair className="w-3.5 h-3.5" />
+                <span>Haritadan Seç</span>
+              </button>
             </div>
           )}
 
@@ -384,21 +418,37 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
           </div>
 
           {/* Coordinates */}
-          <div className="space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700">
-                Harita Koordinatları *
+          <div className="space-y-2 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-sky-600" />
+                <span>Harita Koordinatları *</span>
               </span>
-              <button
-                id="form-get-gps-btn"
-                type="button"
-                onClick={handleGetGps}
-                disabled={isGettingGps}
-                className="text-xs text-sky-700 hover:text-sky-900 font-medium flex items-center gap-1 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-sm"
-              >
-                <Locate className="w-3.5 h-3.5" />
-                <span>{isGettingGps ? 'GPS Alınıyor...' : 'Mevcut GPS Konumumu Al'}</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                {onPickOnMap && (
+                  <button
+                    id="form-pick-on-map-btn"
+                    type="button"
+                    onClick={onPickOnMap}
+                    className="text-xs text-amber-950 font-bold flex items-center gap-1.5 bg-amber-400 hover:bg-amber-300 active:scale-95 px-2.5 py-1.5 rounded-lg border border-amber-500 shadow-sm transition-all cursor-pointer"
+                    title="Modalı kapatıp haritada istediğiniz yere tıklayarak koordinatı otomatik alın"
+                  >
+                    <Crosshair className="w-3.5 h-3.5" />
+                    <span>Haritadan Seç</span>
+                  </button>
+                )}
+                <button
+                  id="form-get-gps-btn"
+                  type="button"
+                  onClick={handleGetGps}
+                  disabled={isGettingGps}
+                  className="text-xs text-sky-700 hover:text-sky-900 font-medium flex items-center gap-1 bg-white hover:bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-xs transition-colors cursor-pointer"
+                  title="Cihazınızın mevcut canlı GPS konumunu alır"
+                >
+                  <Locate className="w-3.5 h-3.5" />
+                  <span>{isGettingGps ? 'Alınıyor...' : 'Canlı GPS'}</span>
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
@@ -411,7 +461,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
                   required
                   value={lat}
                   onChange={(e) => setLat(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 focus:ring-2 focus:ring-sky-500 focus:outline-none"
                 />
               </div>
               <div>
@@ -423,10 +473,16 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
                   required
                   value={lng}
                   onChange={(e) => setLng(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 focus:ring-2 focus:ring-sky-500 focus:outline-none"
                 />
               </div>
             </div>
+            {lat && lng && (
+              <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200/80">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                <span>Konum koordinatları başarıyla alındı: {lat}, {lng}</span>
+              </div>
+            )}
           </div>
 
           {/* Description & Text Formatting (Color, Font, Style, Line Shape) */}
@@ -477,7 +533,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
               <button
                 id="form-cancel-btn"
                 type="button"
-                onClick={onClose}
+                onClick={handleModalClose}
                 className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 Vazgeç
