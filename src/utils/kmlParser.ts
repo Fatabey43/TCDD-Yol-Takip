@@ -273,6 +273,7 @@ export function exportToGeoJSON(points: RailwayPoint[]) {
         notesCount: p.notes?.length || 0,
         photosCount: p.photos?.length || 0,
         updatedAt: p.updatedAt,
+        levelCrossing: p.levelCrossing || null,
       },
     })),
   };
@@ -290,14 +291,21 @@ export function exportToGeoJSON(points: RailwayPoint[]) {
  * Exports points to KML file download (compatible with Google Earth and Google My Maps)
  */
 export function exportToKML(points: RailwayPoint[]) {
-  const placemarks = points.map((p) => `
+  const placemarks = points.map((p) => {
+    let crossingInfo = '';
+    if (p.category === 'crossing' && p.levelCrossing) {
+      const lc = p.levelCrossing;
+      crossingInfo = `\n--- Hemzemin Geçit Özellikleri ---\nGeçit Tipi: ${lc.crossingType || '-'}\nKaplama Cinsi: ${lc.surfaceType || '-'}\n24s Ort. Taşıt: ${lc.dailyVehicleCount || '-'}\n24s Ort. Tren: ${lc.dailyTrainCount || '-'}\nAçıklık: ${lc.clearanceWidth || '-'}\nVerevlik Açısı: ${lc.skewAngle || '-'}\nKestiği Hat Adedi: ${lc.intersectedTrackCount || '-'}\nMin Görüş: ${lc.minSightDistance || '-'}\nEğim: ${lc.railwayGradient || '-'}\nKurp: ${lc.curveInfo || '-'}`;
+    }
+    return `
     <Placemark>
       <name><![CDATA[${p.title}]]></name>
-      <description><![CDATA[Hat: ${p.lineName}\nKM: ${p.kmValue}\nMevki: ${p.locationDesc || '-'}\nAçıklama: ${p.description}\nNot Sayısı: ${p.notes?.length || 0}]]></description>
+      <description><![CDATA[Hat: ${p.lineName}\nKM: ${p.kmValue}\nMevki: ${p.locationDesc || '-'}\nAçıklama: ${p.description}${crossingInfo}\nNot Sayısı: ${p.notes?.length || 0}]]></description>
       <Point>
         <coordinates>${p.lng},${p.lat},0</coordinates>
       </Point>
-    </Placemark>`).join('');
+    </Placemark>`;
+  }).join('');
 
   const kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
@@ -323,6 +331,12 @@ export function exportToKML(points: RailwayPoint[]) {
  */
 export function exportSinglePointKML(point: RailwayPoint) {
   const cleanTitle = (point.title || 'Nokta').replace(/[^\w\s\u00C0-\u017F+-]/gi, '_');
+  let crossingHtml = '';
+  if (point.category === 'crossing' && point.levelCrossing) {
+    const lc = point.levelCrossing;
+    crossingHtml = `<br/><br/><b>[Hemzemin Geçit Özellikleri]</b><br/>• <b>Geçit Tipi:</b> ${lc.crossingType || '-'}<br/>• <b>Kaplama Cinsi:</b> ${lc.surfaceType || '-'}<br/>• <b>24 Saat Taşıt Sayısı:</b> ${lc.dailyVehicleCount || '-'}<br/>• <b>24 Saat Tren Sayısı:</b> ${lc.dailyTrainCount || '-'}<br/>• <b>Açıklık:</b> ${lc.clearanceWidth || '-'}<br/>• <b>Verevlik Açısı:</b> ${lc.skewAngle || '-'}<br/>• <b>Kestiği Hat Adedi:</b> ${lc.intersectedTrackCount || '-'}<br/>• <b>Min. Görüş:</b> ${lc.minSightDistance || '-'}<br/>• <b>Eğim:</b> ${lc.railwayGradient || '-'}<br/>• <b>Kurp Bilgisi:</b> ${lc.curveInfo || '-'}`;
+  }
+
   const kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
@@ -338,7 +352,7 @@ export function exportSinglePointKML(point: RailwayPoint) {
     </Style>
     <Placemark>
       <name><![CDATA[${point.title}]]></name>
-      <description><![CDATA[<b>Hat:</b> ${point.lineName || '-'}<br/><b>KM:</b> ${point.kmValue || '-'}<br/><b>Mevki:</b> ${point.locationDesc || '-'}<br/><b>Açıklama:</b> ${point.description || '-'}<br/><b>Koordinat:</b> ${point.lat}, ${point.lng}]]></description>
+      <description><![CDATA[<b>Hat:</b> ${point.lineName || '-'}<br/><b>KM:</b> ${point.kmValue || '-'}<br/><b>Mevki:</b> ${point.locationDesc || '-'}<br/><b>Açıklama:</b> ${point.description || '-'}${crossingHtml}<br/><b>Koordinat:</b> ${point.lat}, ${point.lng}]]></description>
       <styleUrl>#railwayPointIcon</styleUrl>
       <Point>
         <coordinates>${point.lng},${point.lat},0</coordinates>

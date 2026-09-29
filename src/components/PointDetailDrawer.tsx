@@ -28,6 +28,12 @@ import {
   Ruler,
   Globe,
   Download,
+  ShieldAlert,
+  Sliders,
+  Car,
+  Eye,
+  CornerUpRight,
+  Percent,
 } from 'lucide-react';
 
 interface PointDetailDrawerProps {
@@ -140,7 +146,14 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
   const [isUploadingPhoto, setIsUploadingPhoto] = useState<boolean>(false);
   const [previewPhoto, setPreviewPhoto] = useState<PointPhoto | null>(null);
   const [photoCaption, setPhotoCaption] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'info' | 'notes' | 'photos'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'crossing' | 'notes' | 'photos'>('info');
+
+  // If point is crossing, ensure default tab can easily access crossing specs
+  useEffect(() => {
+    if (point?.category === 'crossing' && point.levelCrossing && Object.values(point.levelCrossing).some(Boolean)) {
+      // Keep user choice or default to info
+    }
+  }, [point?.id, point?.category]);
 
   // Custom modal delete states
   const [showPointDeleteConfirm, setShowPointDeleteConfirm] = useState<boolean>(false);
@@ -512,6 +525,25 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
                 <span>Açıklama &amp; Bilgiler</span>
               </button>
 
+              {/* Hemzemin Geçitler için Özel Sekme */}
+              {point.category === 'crossing' && (
+                <button
+                  id="tab-crossing-btn"
+                  onClick={() => setActiveTab('crossing')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    activeTab === 'crossing'
+                      ? 'bg-amber-500 text-slate-950 shadow-xs ring-2 ring-amber-400/40'
+                      : 'text-amber-800 hover:bg-amber-100/70 hover:text-amber-950'
+                  }`}
+                >
+                  <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Geçit Özellikleri</span>
+                  {point.levelCrossing && Object.values(point.levelCrossing).some(Boolean) && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                  )}
+                </button>
+              )}
+
               <button
                 id="tab-notes-btn"
                 onClick={() => setActiveTab('notes')}
@@ -688,6 +720,174 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
                     </button>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Tab: Hemzemin Geçit Özellikleri (crossing) */}
+            {activeTab === 'crossing' && point.category === 'crossing' && (
+              <div className="space-y-3 animate-in fade-in duration-150">
+                {/* Geçit Başlık Kartı */}
+                <div className="bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-transparent p-3.5 rounded-2xl border border-amber-300/80 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold shadow-xs">
+                      <ShieldAlert className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900">Hemzemin Geçit Özellikleri</h4>
+                      <p className="text-[11px] text-slate-600">Teknik standartlar, taşıt/tren yoğunluğu ve geometri</p>
+                    </div>
+                  </div>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => onEdit(point)}
+                      className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1 transition-all active:scale-95 cursor-pointer shrink-0"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                      <span>Düzenle</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Grid of the 10 Specific Fields */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  {/* 1. Geçit Tipi */}
+                  <div className="bg-slate-50 hover:bg-amber-50/40 transition-colors p-3 rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-500 font-semibold text-[11px]">
+                      <Sliders className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Geçit Tipi</span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-900">
+                      {point.levelCrossing?.crossingType || <span className="text-slate-400 font-normal">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+
+                  {/* 2. Kaplama Cinsi */}
+                  <div className="bg-slate-50 hover:bg-amber-50/40 transition-colors p-3 rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-500 font-semibold text-[11px]">
+                      <Sliders className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Kaplama Cinsi</span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-900">
+                      {point.levelCrossing?.surfaceType || <span className="text-slate-400 font-normal">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+
+                  {/* 3. 24 Saatte Geçen Ortalama Taşıt Adedi */}
+                  <div className="bg-sky-50/60 hover:bg-sky-50 transition-colors p-3 rounded-xl border border-sky-200/80 space-y-1">
+                    <div className="flex items-center gap-1.5 text-sky-700 font-semibold text-[11px]">
+                      <Car className="w-3.5 h-3.5 text-sky-600" />
+                      <span>24 Saatte Geçen Ort. Taşıt Adedi</span>
+                    </div>
+                    <div className="text-xs font-mono font-extrabold text-sky-950">
+                      {point.levelCrossing?.dailyVehicleCount !== undefined && String(point.levelCrossing?.dailyVehicleCount).trim() !== ''
+                        ? `${point.levelCrossing.dailyVehicleCount}`
+                        : <span className="text-slate-400 font-normal font-sans">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+
+                  {/* 4. 24 Saatte Geçen Ortalama Tren Adedi */}
+                  <div className="bg-emerald-50/60 hover:bg-emerald-50 transition-colors p-3 rounded-xl border border-emerald-200/80 space-y-1">
+                    <div className="flex items-center gap-1.5 text-emerald-700 font-semibold text-[11px]">
+                      <Train className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>24 Saatte Geçen Ort. Tren Adedi</span>
+                    </div>
+                    <div className="text-xs font-mono font-extrabold text-emerald-950">
+                      {point.levelCrossing?.dailyTrainCount !== undefined && String(point.levelCrossing?.dailyTrainCount).trim() !== ''
+                        ? `${point.levelCrossing.dailyTrainCount}`
+                        : <span className="text-slate-400 font-normal font-sans">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+
+                  {/* 5. Geçit Açıklığı */}
+                  <div className="bg-slate-50 hover:bg-amber-50/40 transition-colors p-3 rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-500 font-semibold text-[11px]">
+                      <span>📏</span>
+                      <span>Geçit Açıklığı (Genişlik)</span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-900">
+                      {point.levelCrossing?.clearanceWidth || <span className="text-slate-400 font-normal">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+
+                  {/* 6. Verevlik Açısı */}
+                  <div className="bg-slate-50 hover:bg-amber-50/40 transition-colors p-3 rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-500 font-semibold text-[11px]">
+                      <CornerUpRight className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Verevlik Açısı</span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-900">
+                      {point.levelCrossing?.skewAngle || <span className="text-slate-400 font-normal">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+
+                  {/* 7. Kestiği Hat Adedi */}
+                  <div className="bg-slate-50 hover:bg-amber-50/40 transition-colors p-3 rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-500 font-semibold text-[11px]">
+                      <Train className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Kestiği Hat Adedi</span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-900">
+                      {point.levelCrossing?.intersectedTrackCount !== undefined && String(point.levelCrossing?.intersectedTrackCount).trim() !== ''
+                        ? `${point.levelCrossing.intersectedTrackCount}`
+                        : <span className="text-slate-400 font-normal">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+
+                  {/* 8. Trenin Min. Görüş Mesafesi */}
+                  <div className="bg-slate-50 hover:bg-amber-50/40 transition-colors p-3 rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-500 font-semibold text-[11px]">
+                      <Eye className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Trenin Min. Görüş Mesafesi</span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-900">
+                      {point.levelCrossing?.minSightDistance || <span className="text-slate-400 font-normal">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+
+                  {/* 9. Demiryolunun Eğimi (Binde) */}
+                  <div className="bg-rose-50/50 hover:bg-rose-50 transition-colors p-3 rounded-xl border border-rose-200/80 space-y-1">
+                    <div className="flex items-center gap-1.5 text-rose-700 font-semibold text-[11px]">
+                      <Percent className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Demiryolunun Eğimi (Binde - ‰)</span>
+                    </div>
+                    <div className="text-xs font-bold text-rose-950 font-mono">
+                      {point.levelCrossing?.railwayGradient || <span className="text-slate-400 font-normal font-sans">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+
+                  {/* 10. Kurp Bilgileri */}
+                  <div className="bg-slate-50 hover:bg-amber-50/40 transition-colors p-3 rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-500 font-semibold text-[11px]">
+                      <span>🔄</span>
+                      <span>Kurp Bilgileri</span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-900">
+                      {point.levelCrossing?.curveInfo || <span className="text-slate-400 font-normal">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bilgilendirme / Düzenleme Butonu (Eğer henüz veri girilmemişse) */}
+                {(!point.levelCrossing || !Object.values(point.levelCrossing).some(Boolean)) && (
+                  <div className="bg-amber-50/80 border border-amber-200 p-3 rounded-xl text-center space-y-2">
+                    <p className="text-xs text-amber-900">
+                      Bu hemzemin geçit için henüz teknik parametre girilmedi.
+                    </p>
+                    {isAdmin ? (
+                      <button
+                        type="button"
+                        onClick={() => onEdit(point)}
+                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-lg transition-all inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                        <span>Şimdi Parametreleri Gir</span>
+                      </button>
+                    ) : (
+                      <p className="text-[11px] text-slate-500">Parametreleri yalnızca yöneticiler güncelleyebilir.</p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

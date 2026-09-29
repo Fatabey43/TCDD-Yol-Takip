@@ -23,6 +23,22 @@ export interface TextStyleConfig {
   fontSize?: 'xs' | 'sm' | 'base' | 'lg';
 }
 
+/**
+ * Hemzemin Geçitler (Crossing) kategorisine özel teknik ve operasyonel geçit özellikleri
+ */
+export interface LevelCrossingDetails {
+  crossingType?: string; // Geçit Tipi: Örn: Otomatik Bariyerli, Mekanik/Elle Kumandalı, Serbest/İşaretsiz, Yaya Geçidi
+  surfaceType?: string; // Kaplama Cinsi: Örn: Kauçuk (Bodan/Strail), Asfalt, Beton Parke, Ahşap
+  dailyVehicleCount?: string | number; // 24 Saatte Geçen Ortalama Taşıt Adedi
+  dailyTrainCount?: string | number; // 24 Saatte Geçen Ortalama Tren Adedi
+  clearanceWidth?: string; // Geçit Açıklığı / Yol Genişliği (metre)
+  skewAngle?: string; // Verevlik Açısı (Derece cinsinden, örn: 75° veya 90° dik)
+  intersectedTrackCount?: string | number; // Kestiği Hat Adedi (Tek hat, çift hat, vb.)
+  minSightDistance?: string; // Trenin Min. Görüş Mesafesi (metre)
+  railwayGradient?: string; // Demiryolunun Eğimi (Binde - ‰, örn: ‰ 12)
+  curveInfo?: string; // Kurp Bilgileri (Yarıçap R, deve, kurp içi/dışı vb.)
+}
+
 export interface PointNote {
   id: string;
   text: string;
@@ -54,6 +70,7 @@ export interface RailwayPoint {
   updatedAt: string;
   textStyle?: TextStyleConfig;
   titleTextStyle?: TextStyleConfig;
+  levelCrossing?: LevelCrossingDetails;
 }
 
 export interface FilterOptions {

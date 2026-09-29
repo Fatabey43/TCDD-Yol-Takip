@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { RailwayPoint, RailwayPointCategory, TextStyleConfig } from '../types.ts';
+import { RailwayPoint, RailwayPointCategory, TextStyleConfig, LevelCrossingDetails } from '../types.ts';
 import { DEFAULT_TEXT_STYLE, getTextStyleInline } from '../utils/textStyleHelper.ts';
 import { extractKmFromText, DEFAULT_CATEGORY_COLORS } from '../utils/categoryColors.ts';
 import { getStoredLines, addCustomLine, removeCustomLine } from '../utils/customLinesStorage.ts';
 import { TextFormattingToolbar } from './TextFormattingToolbar.tsx';
 import { DeleteConfirmModal } from './DeleteConfirmModal.tsx';
-import { X, Locate, Train, Save, Trash2, MapPin, Crosshair, Plus, Check } from 'lucide-react';
+import { X, Locate, Train, Save, Trash2, MapPin, Crosshair, Plus, Check, ShieldAlert, Sliders, Car, Eye, CornerUpRight, Percent } from 'lucide-react';
 
 interface PointFormModalProps {
   isOpen: boolean;
@@ -52,6 +52,8 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
   const [description, setDescription] = useState('');
   const [textStyle, setTextStyle] = useState<TextStyleConfig>(DEFAULT_TEXT_STYLE);
   const [titleTextStyle, setTitleTextStyle] = useState<TextStyleConfig>({ ...DEFAULT_TEXT_STYLE, fontWeight: 'bold' });
+  const [levelCrossing, setLevelCrossing] = useState<LevelCrossingDetails>({});
+  const [activeFormTab, setActiveFormTab] = useState<'general' | 'crossing'>('general');
   const [isSaving, setIsSaving] = useState(false);
   const [isGettingGps, setIsGettingGps] = useState(false);
   const [formError, setFormError] = useState('');
@@ -83,11 +85,15 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
       setDescription(editingPoint.description);
       setTextStyle(editingPoint.textStyle || DEFAULT_TEXT_STYLE);
       setTitleTextStyle(editingPoint.titleTextStyle || { ...DEFAULT_TEXT_STYLE, fontWeight: 'bold' });
+      setLevelCrossing(editingPoint.levelCrossing || {});
+      setActiveFormTab(editingPoint.category === 'crossing' ? 'crossing' : 'general');
     } else {
       // If we have saved lines, default to the first one or leave empty for user to type
       if (!lineName && currentAvailable.length > 0) {
         setLineName(currentAvailable[0]);
       }
+      setLevelCrossing({});
+      setActiveFormTab('general');
       // If we just got initialCoords (e.g. from map click), update lat/lng without erasing what user already typed!
       if (initialCoords) {
         setLat(initialCoords.lat.toFixed(6));
@@ -176,6 +182,8 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
 
     setIsSaving(true);
     try {
+      const crossingPayload = category === 'crossing' ? levelCrossing : undefined;
+
       if (editingPoint) {
         await onSave({
           ...editingPoint,
@@ -189,6 +197,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
           description: description.trim(),
           textStyle,
           titleTextStyle,
+          levelCrossing: crossingPayload,
         });
       } else {
         await onSave({
@@ -202,6 +211,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
           description: description.trim(),
           textStyle,
           titleTextStyle,
+          levelCrossing: crossingPayload,
         });
       }
       onClose();
@@ -222,6 +232,8 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
       setLng('');
       setIsAddingNewLine(false);
       setNewLineInput('');
+      setLevelCrossing({});
+      setActiveFormTab('general');
     }
     onClose();
   };
@@ -590,32 +602,260 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
             )}
           </div>
 
-          {/* Description & Text Formatting (Color, Font, Style, Line Shape) */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="block text-xs font-semibold text-slate-700">
-                Açıklama / Teknik Bilgiler
-              </label>
-              <span className="text-[11px] text-slate-400">Yazı rengi, font, stil ve satır aralığı</span>
-            </div>
+          {/* Description & Text Formatting (Color, Font, Style, Line Shape) + Hemzemin Geçit Özel Sekmesi */}
+          <div className="space-y-3">
+            {/* If category is crossing, display dedicated Tab Bar: Genel Açıklama / Geçit Özellikleri */}
+            {category === 'crossing' ? (
+              <div className="bg-amber-500/10 p-1 rounded-xl flex items-center gap-1 border border-amber-500/30">
+                <button
+                  type="button"
+                  id="form-tab-general-btn"
+                  onClick={() => setActiveFormTab('general')}
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    activeFormTab === 'general'
+                      ? 'bg-amber-500 text-slate-950 shadow-sm'
+                      : 'text-amber-950 hover:bg-white/60'
+                  }`}
+                >
+                  <Train className="w-3.5 h-3.5" />
+                  <span>Genel Açıklama</span>
+                </button>
+                <button
+                  type="button"
+                  id="form-tab-crossing-btn"
+                  onClick={() => setActiveFormTab('crossing')}
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    activeFormTab === 'crossing'
+                      ? 'bg-amber-500 text-slate-950 shadow-sm ring-2 ring-amber-400/50'
+                      : 'text-amber-950 hover:bg-white/60'
+                  }`}
+                >
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  <span>Geçit Özellikleri (Özel)</span>
+                  {Object.values(levelCrossing).some(Boolean) && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                  )}
+                </button>
+              </div>
+            ) : null}
 
-            {/* Reusable formatting toolbar */}
-            <TextFormattingToolbar
-              value={textStyle}
-              onChange={setTextStyle}
-              showAlignment={true}
-              showLineHeight={true}
-            />
+            {/* TAB CONTENT 1: GENEL AÇIKLAMA */}
+            {category !== 'crossing' || activeFormTab === 'general' ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Açıklama / Teknik Bilgiler
+                  </label>
+                  <span className="text-[11px] text-slate-400">Yazı rengi, font, stil ve satır aralığı</span>
+                </div>
 
-            <textarea
-              id="form-desc-textarea"
-              rows={4}
-              placeholder="Hat altyapısı, travers tipi, bakım notu, yaklaşım yolları veya özel talimatlar..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              style={getTextStyleInline(textStyle)}
-              className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none resize-none transition-all shadow-inner"
-            />
+                {/* Reusable formatting toolbar */}
+                <TextFormattingToolbar
+                  value={textStyle}
+                  onChange={setTextStyle}
+                  showAlignment={true}
+                  showLineHeight={true}
+                />
+
+                <textarea
+                  id="form-desc-textarea"
+                  rows={4}
+                  placeholder="Hat altyapısı, travers tipi, bakım notu, yaklaşım yolları veya özel talimatlar..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  style={getTextStyleInline(textStyle)}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none resize-none transition-all shadow-inner"
+                />
+              </div>
+            ) : (
+              /* TAB CONTENT 2: HEMZEMİN GEÇİT ÖZELLİKLERİ SEKMESİ */
+              <div className="space-y-3 bg-gradient-to-b from-amber-50/70 to-slate-50 p-3.5 rounded-2xl border border-amber-300/80 shadow-xs animate-in fade-in duration-150">
+                <div className="flex items-center justify-between border-b border-amber-200/80 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1 rounded-lg bg-amber-500 text-slate-950">
+                      <ShieldAlert className="w-4 h-4" />
+                    </span>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900">Hemzemin Geçit Teknik Parametreleri</h4>
+                      <p className="text-[10px] text-slate-500">TCDD standartlarında geçit verilerini ve sayımlarını girin</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-200/80 text-amber-900 border border-amber-300">
+                    Geçit Özel
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                  {/* 1. Geçit Tipi */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <Sliders className="w-3 h-3 text-amber-600" />
+                      <span>Geçit Tipi</span>
+                    </label>
+                    <input
+                      type="text"
+                      list="crossing-type-options"
+                      placeholder="Örn: Otomatik Bariyerli, Mekanik, Serbest"
+                      value={levelCrossing.crossingType || ''}
+                      onChange={(e) => setLevelCrossing((prev) => ({ ...prev, crossingType: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                    />
+                    <datalist id="crossing-type-options">
+                      <option value="Otomatik Bariyerli & Flaşörlü (Korumalı)" />
+                      <option value="Yarı Otomatik Bariyerli" />
+                      <option value="Mekanik / Elle Kumandalı Bariyerli" />
+                      <option value="Serbest / İşaretsiz (Korumasız)" />
+                      <option value="Yalnızca Flaşör & Çanlı (Işıklı/Sesli)" />
+                      <option value="Yaya & Engelli Geçidi" />
+                    </datalist>
+                  </div>
+
+                  {/* 2. Kaplama Cinsi */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <Sliders className="w-3 h-3 text-amber-600" />
+                      <span>Kaplama Cinsi</span>
+                    </label>
+                    <input
+                      type="text"
+                      list="surface-type-options"
+                      placeholder="Örn: Kauçuk (Bodan/Strail), Asfalt, Beton"
+                      value={levelCrossing.surfaceType || ''}
+                      onChange={(e) => setLevelCrossing((prev) => ({ ...prev, surfaceType: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                    />
+                    <datalist id="surface-type-options">
+                      <option value="Kauçuk Panel (Bodan / Strail)" />
+                      <option value="Sıcak Asfalt Kaplama" />
+                      <option value="Prefabrik Beton Panel / Parke" />
+                      <option value="Ahşap Traversli Kaplama" />
+                      <option value="Kompozit / Polimer Panel" />
+                      <option value="Stabilize / Toprak" />
+                    </datalist>
+                  </div>
+
+                  {/* 3. 24 Saatte Geçen Ortalama Taşıt Adedi */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <Car className="w-3 h-3 text-sky-600" />
+                      <span>24 Saatte Geçen Ort. Taşıt Adedi</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: 2450 araç/gün"
+                      value={levelCrossing.dailyVehicleCount !== undefined ? String(levelCrossing.dailyVehicleCount) : ''}
+                      onChange={(e) => setLevelCrossing((prev) => ({ ...prev, dailyVehicleCount: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* 4. 24 Saatte Geçen Ortalama Tren Adedi */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <Train className="w-3 h-3 text-emerald-600" />
+                      <span>24 Saatte Geçen Ort. Tren Adedi</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: 32 tren/gün"
+                      value={levelCrossing.dailyTrainCount !== undefined ? String(levelCrossing.dailyTrainCount) : ''}
+                      onChange={(e) => setLevelCrossing((prev) => ({ ...prev, dailyTrainCount: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* 5. Geçit Açıklığı */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <span>📏</span>
+                      <span>Geçit Açıklığı (Genişlik)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: 8.50 metre"
+                      value={levelCrossing.clearanceWidth || ''}
+                      onChange={(e) => setLevelCrossing((prev) => ({ ...prev, clearanceWidth: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* 6. Verevlik Açısı */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <CornerUpRight className="w-3 h-3 text-purple-600" />
+                      <span>Verevlik Açısı (Derece)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: 90° (Dik) veya 65°"
+                      value={levelCrossing.skewAngle || ''}
+                      onChange={(e) => setLevelCrossing((prev) => ({ ...prev, skewAngle: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* 7. Kestiği Hat Adedi */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <Train className="w-3 h-3 text-indigo-600" />
+                      <span>Kestiği Hat Adedi</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: 1 (Tek Hat) veya 2 (Çift Hat)"
+                      value={levelCrossing.intersectedTrackCount !== undefined ? String(levelCrossing.intersectedTrackCount) : ''}
+                      onChange={(e) => setLevelCrossing((prev) => ({ ...prev, intersectedTrackCount: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* 8. Trenin Min. Görüş Mesafesi */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <Eye className="w-3 h-3 text-blue-600" />
+                      <span>Trenin Min. Görüş Mesafesi</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: 750 metre"
+                      value={levelCrossing.minSightDistance || ''}
+                      onChange={(e) => setLevelCrossing((prev) => ({ ...prev, minSightDistance: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* 9. Demiryolunun Eğimi (Binde) */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <Percent className="w-3 h-3 text-rose-600" />
+                      <span>Demiryolunun Eğimi (Binde - ‰)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: ‰ 5 veya 0 (Yatay)"
+                      value={levelCrossing.railwayGradient || ''}
+                      onChange={(e) => setLevelCrossing((prev) => ({ ...prev, railwayGradient: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* 10. Kurp Bilgileri */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <span>🔄</span>
+                      <span>Kurp Bilgileri (R, Deve vb.)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: R=600m Kurp İçi / Düz Hat (Aliman)"
+                      value={levelCrossing.curveInfo || ''}
+                      onChange={(e) => setLevelCrossing((prev) => ({ ...prev, curveInfo: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Actions */}
