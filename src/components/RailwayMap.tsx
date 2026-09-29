@@ -87,6 +87,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
   // Meter & Distance Measurement State
   const [isMeasuring, setIsMeasuring] = useState<boolean>(false);
   const [measurePoints, setMeasurePoints] = useState<LatLngPoint[]>([]);
+  const [hoverPoint, setHoverPoint] = useState<LatLngPoint | null>(null);
 
   // Refs to eliminate stale closure bugs in map click handlers
   const isAddModeRef = useRef(isAddMode);
@@ -98,10 +99,32 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
   const isMeasuringRef = useRef(isMeasuring);
   isMeasuringRef.current = isMeasuring;
 
-  // Measurement results
+  const measurePointsRef = useRef(measurePoints);
+  measurePointsRef.current = measurePoints;
+
+  // Measurement results including committed points + real-time live cursor point
+  const livePoints = useMemo(() => {
+    if (!isMeasuring || measurePoints.length === 0) return measurePoints;
+    if (hoverPoint) {
+      return [...measurePoints, hoverPoint];
+    }
+    return measurePoints;
+  }, [isMeasuring, measurePoints, hoverPoint]);
+
   const measurementResult = useMemo(() => {
-    return calculatePolylineMeasurements(measurePoints);
-  }, [measurePoints]);
+    return calculatePolylineMeasurements(livePoints);
+  }, [livePoints]);
+
+  // Live segment distance between last fixed point and mouse position
+  const currentLiveSegment = useMemo(() => {
+    if (!isMeasuring || measurePoints.length === 0 || !hoverPoint) return null;
+    const lastFixed = measurePoints[measurePoints.length - 1];
+    const dist = getDistanceMeters(lastFixed, hoverPoint);
+    return {
+      distance: dist,
+      formatted: formatMeterDistance(dist),
+    };
+  }, [isMeasuring, measurePoints, hoverPoint]);
 
   // Sync initial measure point if requested by user
   useEffect(() => {
@@ -160,6 +183,18 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
         onMapClickAddRef.current(e.latlng.lat, e.latlng.lng);
         setIsAddMode(false);
       }
+    });
+
+    // Real-time mouse movement listener like Google Earth / Maps ruler:
+    // As the mouse moves, dynamic distance updates in real time
+    map.on('mousemove', (e: L.LeafletMouseEvent) => {
+      if (isMeasuringRef.current && measurePointsRef.current.length > 0) {
+        setHoverPoint({ lat: e.latlng.lat, lng: e.latlng.lng });
+      }
+    });
+
+    map.on('mouseout', () => {
+      setHoverPoint(null);
     });
 
     return () => {
@@ -259,7 +294,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
     }
   }, [mapType, showRailwayOverlay]);
 
-  // Render Measurement Visuals (polyline, numbered pins, segment distance badges)
+  // Render Measurement Visuals (polyline, numbered pins, segment distance badges + dynamic rubber-band line & live cursor badge)
   useEffect(() => {
     const measureGroup = measureLayerRef.current;
     if (!measureGroup) return;
@@ -268,7 +303,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 
     if (!isMeasuring || measurePoints.length === 0) return;
 
-    // Add numbered circular marker for each point
+    // Add numbered circular marker for each committed point
     measurePoints.forEach((pt, index) => {
       const isFirst = index === 0;
       const isLast = index === measurePoints.length - 1 && measurePoints.length > 1;
@@ -278,7 +313,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
           isFirst
             ? 'bg-sky-600 ring-sky-400'
             : isLast
-            ? 'bg-emerald-600 ring-emerald-400 animate-pulse'
+            ? 'bg-emerald-600 ring-emerald-400'
             : 'bg-amber-600 ring-amber-400'
         }">
           ${index + 1}
@@ -295,7 +330,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
       L.marker([pt.lat, pt.lng], { icon, interactive: false }).addTo(measureGroup);
     });
 
-    // Draw line between points
+    // Draw solid/dashed line between committed points
     if (measurePoints.length >= 2) {
       const latlngs: [number, number][] = measurePoints.map((p) => [p.lat, p.lng]);
 
@@ -306,15 +341,14 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
         opacity: 0.4,
       }).addTo(measureGroup);
 
-      // Main dashed line
+      // Main line
       L.polyline(latlngs, {
-        color: '#047857',
-        weight: 3,
+        color: '#059669',
+        weight: 3.5,
         opacity: 0.95,
-        dashArray: '6, 8',
       }).addTo(measureGroup);
 
-      // Segment distance badges at each segment's midpoint
+      // Segment distance badges at each committed segment's midpoint
       for (let i = 0; i < measurePoints.length - 1; i++) {
         const p1 = measurePoints[i];
         const p2 = measurePoints[i + 1];
@@ -340,7 +374,73 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
         L.marker([midLat, midLng], { icon: badgeIcon, interactive: false }).addTo(measureGroup);
       }
     }
-  }, [measurePoints, isMeasuring]);
+
+    // REAL-TIME DYNAMIC RUBBER-BAND LINE & FLOATING CURSOR BADGE (Google Earth / Google Maps Style)
+    // As the mouse moves, the line dynamically extends and the distance increases/decreases in real time!
+    if (hoverPoint && measurePoints.length > 0) {
+      const lastPoint = measurePoints[measurePoints.length - 1];
+      const liveSegmentDist = getDistanceMeters(lastPoint, hoverPoint);
+      const liveFormatted = formatMeterDistance(liveSegmentDist);
+
+      // Calculate total distance including this live mouse position
+      let totalWithHover = liveSegmentDist;
+      for (let i = 0; i < measurePoints.length - 1; i++) {
+        totalWithHover += getDistanceMeters(measurePoints[i], measurePoints[i + 1]);
+      }
+      const totalFormatted = formatMeterDistance(totalWithHover);
+
+      // Live rubber-band line from last point to cursor
+      L.polyline(
+        [
+          [lastPoint.lat, lastPoint.lng],
+          [hoverPoint.lat, hoverPoint.lng],
+        ],
+        {
+          color: '#38bdf8', // Sky blue like Google Maps
+          weight: 2.5,
+          dashArray: '5, 6',
+          opacity: 0.9,
+        }
+      ).addTo(measureGroup);
+
+      // Live target crosshair circle at cursor position
+      const cursorTargetHtml = `
+        <div class="relative flex items-center justify-center pointer-events-none">
+          <div class="w-4 h-4 rounded-full border-2 border-sky-400 bg-sky-500/30 animate-pulse"></div>
+          <div class="w-1.5 h-1.5 rounded-full bg-white shadow-xs"></div>
+        </div>
+      `;
+      const cursorTargetIcon = L.divIcon({
+        html: cursorTargetHtml,
+        className: 'measure-cursor-target',
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
+      });
+      L.marker([hoverPoint.lat, hoverPoint.lng], { icon: cursorTargetIcon, interactive: false }).addTo(measureGroup);
+
+      // Real-time floating distance badge right next to the mouse cursor
+      const cursorTooltipHtml = `
+        <div class="bg-slate-900/95 text-white px-2.5 py-1 rounded-lg shadow-xl border border-sky-400/80 font-mono text-[11px] whitespace-nowrap pointer-events-none flex flex-col gap-0.5 leading-tight">
+          <div class="flex items-center gap-1.5 font-bold text-sky-300">
+            <span class="w-2 h-2 rounded-full bg-sky-400 animate-ping"></span>
+            <span>${liveFormatted.shortText}</span>
+          </div>
+          ${
+            measurePoints.length > 1
+              ? `<div class="text-[10px] text-emerald-400 border-t border-slate-700 pt-0.5">Toplam: ${totalFormatted.shortText}</div>`
+              : ''
+          }
+        </div>
+      `;
+      const cursorTooltipIcon = L.divIcon({
+        html: cursorTooltipHtml,
+        className: 'measure-cursor-tooltip',
+        iconSize: [110, 36],
+        iconAnchor: [-14, 18], // slightly offset to the right and down of cursor
+      });
+      L.marker([hoverPoint.lat, hoverPoint.lng], { icon: cursorTooltipIcon, interactive: false }).addTo(measureGroup);
+    }
+  }, [measurePoints, hoverPoint, isMeasuring]);
 
   // Update Markers
   useEffect(() => {
@@ -467,6 +567,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
         setIsAddMode(false); // Mutual exclusivity
       } else {
         setMeasurePoints([]);
+        setHoverPoint(null);
       }
       return next;
     });
@@ -529,16 +630,22 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 
       {/* Mode Banner when Measurement Mode is Active */}
       {isMeasuring && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-emerald-600 text-white px-4 py-2 rounded-2xl font-bold text-xs sm:text-sm shadow-xl flex items-center gap-2 border-2 border-emerald-400">
-          <Ruler className="w-4 h-4" />
-          <span>Mesafe Ölçümü: Haritada 2 veya daha fazla noktaya tıklayın</span>
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-slate-950/90 text-white px-4 py-2 rounded-2xl font-bold text-xs sm:text-sm shadow-2xl flex items-center gap-2.5 border-2 border-emerald-500/80 backdrop-blur-md">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></div>
+          <Ruler className="w-4 h-4 text-emerald-400" />
+          <span>
+            {measurePoints.length === 0
+              ? 'Başlangıç için haritada bir noktaya tıklayın'
+              : 'Mouse\'u hareket ettirin, sabitlemek için tıklayın'}
+          </span>
           <button
             id="close-measure-banner-btn"
             onClick={() => {
               setIsMeasuring(false);
               setMeasurePoints([]);
+              setHoverPoint(null);
             }}
-            className="ml-2 bg-emerald-800 hover:bg-emerald-900 text-white text-xs px-2.5 py-0.5 rounded-xl transition-colors cursor-pointer"
+            className="ml-2 bg-slate-800 hover:bg-rose-950 text-slate-300 hover:text-rose-300 text-xs px-2.5 py-1 rounded-xl transition-colors cursor-pointer border border-slate-700"
           >
             Kapat
           </button>
@@ -553,13 +660,25 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
               <Ruler className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-[11px] text-emerald-400 font-semibold uppercase tracking-wider">
-                Toplam Hat Mesafesi ({measurePoints.length} Nokta)
+              <div className="text-[11px] text-emerald-400 font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                <span>Canlı Mesafe Ölçer</span>
+                <span className="text-[10px] bg-sky-500/20 text-sky-300 px-1.5 py-0.2 rounded font-mono">
+                  {measurePoints.length} Sabit Nokta {hoverPoint ? '+ Canlı Konum' : ''}
+                </span>
               </div>
-              <div className="text-lg sm:text-xl font-mono font-bold text-white">
-                {measurementResult.totalMeters > 0
-                  ? measurementResult.formatted
-                  : 'Noktaları seçin...'}
+              <div className="text-lg sm:text-xl font-mono font-bold text-white flex items-center gap-2">
+                <span>
+                  {measurementResult.totalMeters > 0
+                    ? measurementResult.formatted
+                    : measurePoints.length === 0
+                    ? 'Başlangıç noktasını seçin...'
+                    : 'Mouse\'u gezdirin...'}
+                </span>
+                {hoverPoint && currentLiveSegment && (
+                  <span className="text-xs font-mono font-normal text-sky-300 bg-sky-950/80 px-2 py-0.5 rounded border border-sky-700/60 hidden sm:inline-block">
+                    + {currentLiveSegment.formatted.shortText}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -570,7 +689,9 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
               id="measure-undo-btn"
               type="button"
               disabled={measurePoints.length === 0}
-              onClick={() => setMeasurePoints((prev) => prev.slice(0, -1))}
+              onClick={() => {
+                setMeasurePoints((prev) => prev.slice(0, -1));
+              }}
               className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-xs font-semibold px-3 py-1.5 rounded-xl border border-slate-700 transition-colors cursor-pointer"
               title="Son Noktayı Geri Al"
             >
@@ -583,7 +704,10 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
               id="measure-reset-btn"
               type="button"
               disabled={measurePoints.length === 0}
-              onClick={() => setMeasurePoints([])}
+              onClick={() => {
+                setMeasurePoints([]);
+                setHoverPoint(null);
+              }}
               className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-xs font-semibold px-3 py-1.5 rounded-xl border border-slate-700 transition-colors cursor-pointer"
               title="Ölçümü Sıfırla"
             >
@@ -598,6 +722,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
               onClick={() => {
                 setIsMeasuring(false);
                 setMeasurePoints([]);
+                setHoverPoint(null);
               }}
               className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3.5 py-1.5 rounded-xl shadow-md transition-colors cursor-pointer"
             >
