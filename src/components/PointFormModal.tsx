@@ -704,10 +704,28 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
                       <option value="Otomatik Bariyerli & Flaşörlü (Korumalı)" />
                       <option value="Yarı Otomatik Bariyerli" />
                       <option value="Mekanik / Elle Kumandalı Bariyerli" />
+                      <option value="Serbest Çapraz İşaretli" />
                       <option value="Serbest / İşaretsiz (Korumasız)" />
                       <option value="Yalnızca Flaşör & Çanlı (Işıklı/Sesli)" />
                       <option value="Yaya & Engelli Geçidi" />
                     </datalist>
+                    {/* Quick Preset Buttons */}
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {['Serbest Çapraz İşaretli', 'Otomatik Bariyerli', 'Serbest / İşaretsiz'].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setLevelCrossing((prev) => ({ ...prev, crossingType: preset }))}
+                          className={`text-[10px] px-2 py-0.5 rounded-md border transition-all cursor-pointer ${
+                            levelCrossing.crossingType === preset
+                              ? 'bg-amber-500 text-slate-950 font-bold border-amber-600 shadow-2xs'
+                              : 'bg-white text-slate-600 hover:bg-amber-50 border-slate-200'
+                          }`}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   {/* 2. Kaplama Cinsi */}
