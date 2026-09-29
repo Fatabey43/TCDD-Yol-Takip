@@ -30,6 +30,7 @@ app.use(express.static(path.join(process.cwd(), 'public')));
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DATA_FILE = path.join(DATA_DIR, 'railway_points.json');
 const DELETED_FILE = path.join(DATA_DIR, 'deleted_points.json');
+const DELETED_USERS_FILE = path.join(DATA_DIR, 'deleted_users.json');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const STATE_FILE = path.join(DATA_DIR, 'database_state.json');
 const LOGS_FILE = path.join(DATA_DIR, 'audit_logs.json');
@@ -338,12 +339,41 @@ interface StoredUser {
   name: string;
   email: string;
   role: 'admin' | 'editor' | 'viewer';
+  status?: 'active' | 'pending' | 'rejected';
   department?: string;
   avatar?: string;
   passwordSalt: string;
   passwordHash: string;
   createdAt: string;
   lastLoginAt?: string;
+}
+
+// Helpers for Deleted Users Blacklist (prevents resurrection permanently)
+function getDeletedUserKeys(): Set<string> {
+  try {
+    if (fs.existsSync(DELETED_USERS_FILE)) {
+      const content = fs.readFileSync(DELETED_USERS_FILE, 'utf-8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed)) return new Set(parsed);
+    }
+  } catch {}
+  return new Set<string>();
+}
+
+function recordDeletedUser(id: string, email: string) {
+  try {
+    const set = getDeletedUserKeys();
+    if (id) set.add(id);
+    if (email) set.add(email.trim().toLowerCase());
+    fs.writeFileSync(DELETED_USERS_FILE, JSON.stringify(Array.from(set), null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error writing deleted users file:', err);
+  }
+}
+
+function isUserDeleted(id: string, email: string): boolean {
+  const set = getDeletedUserKeys();
+  return set.has(id) || set.has((email || '').trim().toLowerCase());
 }
 
 function hashPassword(password: string, salt = crypto.randomBytes(16).toString('hex')): { salt: string; hash: string } {
@@ -389,7 +419,10 @@ function getUsers(): StoredUser[] {
     if (fs.existsSync(USERS_FILE)) {
       const raw = fs.readFileSync(USERS_FILE, 'utf-8');
       const list = JSON.parse(raw);
-      if (Array.isArray(list)) return list;
+      if (Array.isArray(list)) {
+        const deletedKeys = getDeletedUserKeys();
+        return list.filter((u) => u && !deletedKeys.has(u.id) && !deletedKeys.has((u.email || '').trim().toLowerCase()));
+      }
     }
   } catch (err) {
     console.error('Error reading users file:', err);
@@ -399,7 +432,9 @@ function getUsers(): StoredUser[] {
 
 function saveUsers(users: StoredUser[]) {
   try {
-    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+    const deletedKeys = getDeletedUserKeys();
+    const clean = (users || []).filter((u) => u && !deletedKeys.has(u.id) && !deletedKeys.has((u.email || '').trim().toLowerCase()));
+    fs.writeFileSync(USERS_FILE, JSON.stringify(clean, null, 2), 'utf-8');
   } catch (err) {
     console.error('Error writing users file:', err);
   }
@@ -411,6 +446,7 @@ function sanitizeUser(u: StoredUser) {
     name: u.name,
     email: u.email,
     role: u.role,
+    status: u.status || 'active',
     department: u.department || 'Demiryolu Operasyonları',
     avatar: u.avatar || '',
     createdAt: u.createdAt,
@@ -426,13 +462,14 @@ function seedUsers() {
 
   let changed = false;
 
-  // Ensure Hasan Polat Türkmen exists
-  if (!users.some((u) => u.email.toLowerCase() === 'turkmenhassan34@gmail.com')) {
+  // Ensure Hasan Polat Türkmen exists (unless explicitly deleted by admin)
+  if (!isUserDeleted('usr-admin-1', 'turkmenhassan34@gmail.com') && !users.some((u) => u.email.toLowerCase() === 'turkmenhassan34@gmail.com')) {
     users.push({
       id: 'usr-admin-1',
       name: 'Hasan Polat Türkmen',
       email: 'turkmenhassan34@gmail.com',
       role: 'admin',
+      status: 'active',
       department: 'TCDD Sistem Yöneticisi / Saha Sorumlusu',
       passwordSalt: adminPass.salt,
       passwordHash: adminPass.hash,
@@ -441,13 +478,14 @@ function seedUsers() {
     changed = true;
   }
 
-  // Ensure Bahadır Efet exists with admin rights
-  if (!users.some((u) => u.email.toLowerCase() === 'bahadirefet@gmail.com')) {
+  // Ensure Bahadır Efet exists with admin rights (unless explicitly deleted by admin)
+  if (!isUserDeleted('usr-admin-bahadir', 'bahadirefet@gmail.com') && !users.some((u) => u.email.toLowerCase() === 'bahadirefet@gmail.com')) {
     users.push({
       id: 'usr-admin-bahadir',
       name: 'Bahadır Efet',
       email: 'bahadirefet@gmail.com',
       role: 'admin',
+      status: 'active',
       department: 'TCDD Demiryolu Proje & Hat Koordinatörü',
       passwordSalt: adminPass.salt,
       passwordHash: adminPass.hash,
@@ -456,13 +494,14 @@ function seedUsers() {
     changed = true;
   }
 
-  // Ensure Saha Bakım Şefliği exists
-  if (!users.some((u) => u.email.toLowerCase() === 'saha@tcdd.gov.tr')) {
+  // Ensure Saha Bakım Şefliği exists (unless explicitly deleted by admin)
+  if (!isUserDeleted('usr-editor-2', 'saha@tcdd.gov.tr') && !users.some((u) => u.email.toLowerCase() === 'saha@tcdd.gov.tr')) {
     users.push({
       id: 'usr-editor-2',
       name: 'Saha Bakım Şefliği',
       email: 'saha@tcdd.gov.tr',
       role: 'editor',
+      status: 'active',
       department: 'Yol Bakım ve Onarım Müdürlüğü',
       passwordSalt: editorPass.salt,
       passwordHash: editorPass.hash,
@@ -471,13 +510,14 @@ function seedUsers() {
     changed = true;
   }
 
-  // Ensure Gözlemci / Denetmen exists
-  if (!users.some((u) => u.email.toLowerCase() === 'izleyici@tcdd.gov.tr')) {
+  // Ensure Gözlemci / Denetmen exists (unless explicitly deleted by admin)
+  if (!isUserDeleted('usr-viewer-3', 'izleyici@tcdd.gov.tr') && !users.some((u) => u.email.toLowerCase() === 'izleyici@tcdd.gov.tr')) {
     users.push({
       id: 'usr-viewer-3',
       name: 'Gözlemci / Denetmen',
       email: 'izleyici@tcdd.gov.tr',
       role: 'viewer',
+      status: 'active',
       department: 'Demiryolu Emniyet ve Denetim',
       passwordSalt: viewerPass.salt,
       passwordHash: viewerPass.hash,
@@ -561,6 +601,29 @@ app.post('/api/auth/login', (req, res) => {
     });
   }
 
+  // Check user approval status: pending users cannot login until approved by any administrator
+  if (user.status === 'pending') {
+    recordAuditLog({
+      action: 'ONAY_BEKLEYEN_GİRİŞ',
+      email: cleanEmail,
+      userName: user.name,
+      status: 'warning',
+      details: 'Hesap henüz bir sistem yöneticisi tarafından onaylanmadığı için giriş engellendi',
+      ip
+    });
+    return res.status(403).json({
+      error: 'Hesabınız oluşturuldu ancak henüz bir Sistem Yöneticisi tarafından onaylanmadı. Lütfen yöneticinizin onay vermesini bekleyiniz.',
+      code: 'ACCOUNT_PENDING_APPROVAL'
+    });
+  }
+
+  if (user.status === 'rejected') {
+    return res.status(403).json({
+      error: 'Hesap başvurunuz yönetici tarafından reddedilmiştir.',
+      code: 'ACCOUNT_REJECTED'
+    });
+  }
+
   user.lastLoginAt = new Date().toISOString();
   saveUsers(users);
 
@@ -581,26 +644,17 @@ app.post('/api/auth/login', (req, res) => {
   });
 });
 
-// POST /api/auth/register (Only Admins can register new users, or initial bootstrap if 0 users)
+// POST /api/auth/register
+// 1) Any user can submit registration from portal (created with status: 'pending', role: 'editor')
+// 2) If an authenticated Admin creates the user, it is directly 'active' with the specified role
 app.post('/api/auth/register', (req, res) => {
   const { name, email, password, department, role } = req.body;
   const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'Bilinmiyor';
 
   const currentUser = getAuthUser(req);
+  const isAdminRequest = currentUser && currentUser.role === 'admin';
   const users = getUsers();
   const isFirstUser = users.length === 0;
-
-  // Security check: Only administrators can create new users (unless system is bootstrapping 1st user)
-  if (!isFirstUser && (!currentUser || currentUser.role !== 'admin')) {
-    recordAuditLog({
-      action: 'YETKİSİZ_KAYIT_DENEMESİ',
-      email: email || 'Bilinmiyor',
-      status: 'failed',
-      details: 'Yetkisiz kullanıcı kayıt denemesinde bulundu (Yönetici yetkisi gereklidir)',
-      ip
-    });
-    return res.status(403).json({ error: 'Yeni kullanıcı hesabı oluşturma yetkisi yalnızca Sistem Yöneticisine aittir.' });
-  }
 
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'Ad Soyad, E-posta ve şifre zorunludur' });
@@ -623,35 +677,61 @@ app.post('/api/auth/register', (req, res) => {
   }
 
   const { salt, hash } = hashPassword(password);
-  const isBahadir = cleanEmail === 'bahadirefet@gmail.com' || cleanEmail === 'turkmenhassan34@gmail.com';
-  const assignedRole: 'admin' | 'editor' | 'viewer' = (isBahadir || isFirstUser)
-    ? 'admin'
-    : (role === 'admin' ? 'editor' : (role || 'editor'));
+  const isMasterAdminEmail = cleanEmail === 'bahadirefet@gmail.com' || cleanEmail === 'turkmenhassan34@gmail.com';
+
+  // If created by an Admin, it's active immediately with selected role.
+  // If registered from public portal, status is 'pending' (requires admin approval), role defaults to 'editor' (no role choice on public portal)
+  let assignedRole: 'admin' | 'editor' | 'viewer' = 'editor';
+  let assignedStatus: 'active' | 'pending' | 'rejected' = 'pending';
+
+  if (isMasterAdminEmail || isFirstUser) {
+    assignedRole = 'admin';
+    assignedStatus = 'active';
+  } else if (isAdminRequest) {
+    assignedRole = (role === 'admin' || role === 'viewer' || role === 'editor') ? role : 'editor';
+    assignedStatus = 'active';
+  } else {
+    // Public portal registration: No role picker, awaits admin confirmation
+    assignedRole = 'editor';
+    assignedStatus = 'pending';
+  }
 
   const newUser: StoredUser = {
     id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     name: name.trim(),
     email: cleanEmail,
     role: assignedRole,
-    department: department ? department.trim() : 'Saha Operasyonları',
+    status: assignedStatus,
+    department: department ? department.trim() : 'Demiryolu Operasyonları',
     passwordSalt: salt,
     passwordHash: hash,
     createdAt: new Date().toISOString(),
-    lastLoginAt: new Date().toISOString()
+    lastLoginAt: assignedStatus === 'active' ? new Date().toISOString() : undefined
   };
 
   users.push(newUser);
   saveUsers(users);
 
   recordAuditLog({
-    action: 'YENİ_KULLANICI_KAYDI',
+    action: assignedStatus === 'pending' ? 'YENİ_HESAP_BAŞVURUSU' : 'YENİ_KULLANICI_KAYDI',
     email: cleanEmail,
     userName: newUser.name,
     role: newUser.role,
-    status: 'success',
-    details: `Yeni kullanıcı hesabı oluşturuldu: ${newUser.name} (${assignedRole})`,
+    status: assignedStatus === 'pending' ? 'info' : 'success',
+    details: assignedStatus === 'pending'
+      ? `Yeni kullanıcı başvurdu (Yönetici Onayı Bekliyor): ${newUser.name} (${cleanEmail})`
+      : `Yeni kullanıcı hesabı oluşturuldu ve aktifleştirildi: ${newUser.name} (${assignedRole})`,
     ip
   });
+
+  if (assignedStatus === 'pending') {
+    return res.status(201).json({
+      success: true,
+      pending: true,
+      message: 'Kayıt başvurunuz başarıyla oluşturuldu! Güvenlik nedeniyle sisteme giriş yapabilmeniz için herhangi bir yöneticinin onay vermesi gerekmektedir.',
+      user: sanitizeUser(newUser)
+    });
+  }
 
   const token = generateToken(newUser);
   res.status(201).json({
@@ -776,15 +856,51 @@ app.delete('/api/auth/users/:id', (req, res) => {
   users.splice(targetIndex, 1);
   saveUsers(users);
 
+  // Blacklist permanently so this user never resurrects from seed or cache
+  recordDeletedUser(removed.id, removed.email);
+
   recordAuditLog({
     action: 'KULLANICI_SİLİNDİ',
     email: removed.email,
     userName: removed.name,
     status: 'warning',
-    details: `${removed.name} (${removed.email}) hesabı sistemden silindi`
+    details: `${removed.name} (${removed.email}) hesabı sistemden silindi ve kalıcı engellendi`
   });
 
   res.json({ success: true });
+});
+
+// PUT /api/auth/users/:id/approve (Admin confirms pending user and sets role)
+app.put('/api/auth/users/:id/approve', (req, res) => {
+  const currentUser = getAuthUser(req);
+  if (currentUser && currentUser.role !== 'admin') {
+    return res.status(403).json({ error: 'Kullanıcı onaylama işlemi için Yönetici yetkisi gereklidir' });
+  }
+
+  const { id } = req.params;
+  const { role, status = 'active' } = req.body;
+  const users = getUsers();
+  const target = users.find((u) => u.id === id);
+  if (!target) {
+    return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+  }
+
+  target.status = status;
+  if (role && ['admin', 'editor', 'viewer'].includes(role)) {
+    target.role = role;
+  }
+  saveUsers(users);
+
+  recordAuditLog({
+    action: status === 'active' ? 'KULLANICI_ONAYLANDI' : 'KULLANICI_DURUMU_DEĞİŞTİ',
+    email: target.email,
+    userName: target.name,
+    role: target.role,
+    status: 'success',
+    details: `${target.name} (${target.email}) hesabı yönetici tarafından onaylandı: Rol: ${target.role}`
+  });
+
+  res.json({ success: true, user: sanitizeUser(target) });
 });
 
 // GET /api/logs (Fetch audit & access logs)

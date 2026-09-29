@@ -80,12 +80,14 @@ export interface FilterOptions {
 }
 
 export type UserRole = 'admin' | 'editor' | 'viewer';
+export type UserStatus = 'active' | 'pending' | 'rejected';
 
 export interface User {
   id: string;
   name: string;
   email: string;
   role: UserRole;
+  status?: UserStatus; // 'active' (onaylanmış) | 'pending' (yönetici onayı bekliyor)
   department?: string;
   avatar?: string;
   createdAt: string;

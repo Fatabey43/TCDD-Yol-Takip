@@ -8,6 +8,7 @@ import {
   fetchAuditLogs,
   clearAuditLogs,
   registerApi,
+  approveUserApi,
 } from '../services/authApi.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 import { DeleteConfirmModal } from './DeleteConfirmModal.tsx';
@@ -86,47 +87,10 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     setUsersLoading(true);
     try {
       const list = await fetchAllUsers();
-      if (list && list.length > 0) {
-        setUsers(list);
-      } else {
-        // Fallback default users if offline or network hiccup
-        setUsers([
-          {
-            id: 'usr-admin-bahadir',
-            name: 'Bahadır Efet',
-            email: 'bahadirefet@gmail.com',
-            role: 'admin',
-            department: 'TCDD Demiryolu Proje & Hat Koordinatörü',
-            createdAt: '2026-09-28T16:56:38.067Z',
-          },
-          {
-            id: 'usr-admin-1',
-            name: 'Hasan Polat Türkmen',
-            email: 'turkmenhassan34@gmail.com',
-            role: 'admin',
-            department: 'TCDD Sistem Yöneticisi / Saha Sorumlusu',
-            createdAt: '2026-09-21T14:40:39.732Z',
-          },
-          {
-            id: 'usr-editor-2',
-            name: 'Saha Bakım Şefliği',
-            email: 'saha@tcdd.gov.tr',
-            role: 'editor',
-            department: 'Yol Bakım ve Onarım Müdürlüğü',
-            createdAt: '2026-09-28T16:56:38.067Z',
-          },
-          {
-            id: 'usr-viewer-3',
-            name: 'Gözlemci / Denetmen',
-            email: 'izleyici@tcdd.gov.tr',
-            role: 'viewer',
-            department: 'Demiryolu Emniyet ve Denetim',
-            createdAt: '2026-09-28T16:56:38.067Z',
-          },
-        ]);
-      }
+      setUsers(list || []);
     } catch (err) {
       console.warn('Kullanıcılar yüklenemedi:', err);
+      setUsers([]);
     } finally {
       setUsersLoading(false);
     }
@@ -226,15 +190,34 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     }
   };
 
+  // Handle Approve User (Admin accepts pending account and grants role)
+  const handleApproveUser = async (userId: string, role: UserRole) => {
+    setUpdatingId(userId);
+    try {
+      const ok = await approveUserApi(userId, role, 'active');
+      if (ok) {
+        setUsers((prev) =>
+          prev.map((u) => (u.id === userId ? { ...u, status: 'active', role } : u))
+        );
+        onSuccessToast?.('Kullanıcı hesabı onaylandı ve sisteme erişim yetkisi verildi.');
+        loadLogs();
+      } else {
+        onSuccessToast?.('Kullanıcı onaylanamadı.');
+      }
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   // Handle Delete User
   const confirmDeleteUser = async () => {
     if (!userToDelete) return;
     setIsDeletingUser(true);
     try {
-      const ok = await deleteUserApi(userToDelete.id);
+      const ok = await deleteUserApi(userToDelete.id, userToDelete.email);
       if (ok) {
         setUsers((prev) => prev.filter((u) => u.id !== userToDelete.id));
-        onSuccessToast?.(`${userToDelete.name} sistemden silindi.`);
+        onSuccessToast?.(`${userToDelete.name} kalıcı olarak silindi ve erişimi engellendi.`);
         loadLogs();
       } else {
         onSuccessToast?.('Kullanıcı silinemedi.');
@@ -362,6 +345,11 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
               <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-slate-800 text-slate-300">
                 {users.length}
               </span>
+              {users.some((u) => u.status === 'pending') && (
+                <span className="px-1.5 py-0.5 text-[9px] font-black rounded-full bg-amber-500 text-slate-950 animate-pulse">
+                  {users.filter((u) => u.status === 'pending').length} Onay Bekliyor
+                </span>
+              )}
             </button>
 
             <button
@@ -660,6 +648,12 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
                               <span className="font-bold text-sm text-white truncate">{u.name}</span>
+                              {u.status === 'pending' && (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/50 flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-amber-400" />
+                                  <span>Onay Bekliyor</span>
+                                </span>
+                              )}
                               {isSelf && (
                                 <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">
                                   Siz
@@ -676,28 +670,57 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                         </div>
 
                         {/* Actions & Role Selector */}
-                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                          {/* Role Selector */}
-                          <div className="relative">
-                            <select
-                              id={`role-select-${u.id}`}
-                              disabled={isUpdating}
-                              value={u.role}
-                              onChange={(e) => handleRoleChange(u.id, e.target.value as UserRole)}
-                              className={`text-xs font-bold py-1.5 px-3 rounded-xl border appearance-none pr-8 cursor-pointer focus:outline-none transition-all ${
-                                u.role === 'admin'
-                                  ? 'bg-purple-950/80 border-purple-700 text-purple-300'
-                                  : u.role === 'editor'
-                                  ? 'bg-sky-950/80 border-sky-700 text-sky-300'
-                                  : 'bg-slate-900 border-slate-700 text-slate-300'
-                              }`}
-                            >
-                              <option value="admin">👑 Yönetici</option>
-                              <option value="editor">🛠️ Saha Personeli</option>
-                              <option value="viewer">👁️ Gözlemci</option>
-                            </select>
-                            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                          </div>
+                        <div className="flex flex-wrap items-center gap-2 shrink-0 self-end sm:self-center">
+                          {u.status === 'pending' ? (
+                            /* PENDING USER APPROVAL ACTIONS */
+                            <div className="flex items-center gap-1.5 bg-amber-950/40 p-1.5 rounded-xl border border-amber-500/40">
+                              <span className="text-[10px] font-bold text-amber-300 px-1.5 py-0.5 rounded bg-amber-500/20">
+                                Onay Bekliyor
+                              </span>
+                              {/* Quick Role & Approve Buttons */}
+                              <button
+                                type="button"
+                                disabled={isUpdating}
+                                onClick={() => handleApproveUser(u.id, 'editor')}
+                                title="Saha Personeli Olarak Onayla"
+                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-all active:scale-95 cursor-pointer shadow-xs flex items-center gap-1"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Saha Olarak Onayla</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isUpdating}
+                                onClick={() => handleApproveUser(u.id, 'admin')}
+                                title="Yönetici Olarak Onayla"
+                                className="px-2 py-1 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-lg transition-all active:scale-95 cursor-pointer shadow-xs flex items-center gap-1"
+                              >
+                                <span>👑 Yönetici</span>
+                              </button>
+                            </div>
+                          ) : (
+                            /* ACTIVE USER ROLE SELECTOR */
+                            <div className="relative">
+                              <select
+                                id={`role-select-${u.id}`}
+                                disabled={isUpdating}
+                                value={u.role}
+                                onChange={(e) => handleRoleChange(u.id, e.target.value as UserRole)}
+                                className={`text-xs font-bold py-1.5 px-3 rounded-xl border appearance-none pr-8 cursor-pointer focus:outline-none transition-all ${
+                                  u.role === 'admin'
+                                    ? 'bg-purple-950/80 border-purple-700 text-purple-300'
+                                    : u.role === 'editor'
+                                    ? 'bg-sky-950/80 border-sky-700 text-sky-300'
+                                    : 'bg-slate-900 border-slate-700 text-slate-300'
+                                }`}
+                              >
+                                <option value="admin">👑 Yönetici</option>
+                                <option value="editor">🛠️ Saha Personeli</option>
+                                <option value="viewer">👁️ Gözlemci</option>
+                              </select>
+                              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            </div>
+                          )}
 
                           {/* Reset Password Button */}
                           <button
@@ -717,7 +740,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                             <button
                               id={`delete-user-btn-${u.id}`}
                               onClick={() => setUserToDelete(u)}
-                              title="Kullanıcıyı Sil"
+                              title="Kullanıcıyı Sil (Kalıcı Engelle)"
                               className="p-1.5 rounded-xl border border-slate-700 text-slate-400 hover:text-red-400 hover:border-red-500 hover:bg-red-950/30 transition-colors cursor-pointer"
                             >
                               <Trash2 className="w-4 h-4" />

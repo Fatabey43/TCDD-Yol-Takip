@@ -120,7 +120,14 @@ export async function fetchAllUsers(): Promise<User[]> {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!res.ok) return [];
-    return await res.json();
+    const list: User[] = await res.json();
+    let deletedSet = new Set<string>();
+    try {
+      const raw = localStorage.getItem('demiryolu_deleted_users');
+      if (raw) deletedSet = new Set(JSON.parse(raw));
+    } catch {}
+
+    return list.filter((u) => !deletedSet.has(u.id) && !deletedSet.has((u.email || '').toLowerCase()));
   } catch {
     return [];
   }
@@ -154,8 +161,31 @@ export async function resetUserPasswordApi(userId: string, newPassword: string):
   return res.ok;
 }
 
-export async function deleteUserApi(userId: string): Promise<boolean> {
+export async function approveUserApi(userId: string, role: UserRole, status: 'active' | 'rejected' = 'active'): Promise<boolean> {
   const token = getStoredToken();
+  const res = await fetch(`/api/auth/users/${userId}/approve`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ role, status }),
+  });
+
+  return res.ok;
+}
+
+export async function deleteUserApi(userId: string, email?: string): Promise<boolean> {
+  const token = getStoredToken();
+  // Record locally in deleted users blacklist so even offline or on reload it never resurfaces
+  try {
+    const raw = localStorage.getItem('demiryolu_deleted_users') || '[]';
+    const set = new Set(JSON.parse(raw));
+    set.add(userId);
+    if (email) set.add(email.trim().toLowerCase());
+    localStorage.setItem('demiryolu_deleted_users', JSON.stringify(Array.from(set)));
+  } catch {}
+
   const res = await fetch(`/api/auth/users/${userId}`, {
     method: 'DELETE',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
