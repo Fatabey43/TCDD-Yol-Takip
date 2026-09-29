@@ -949,7 +949,6 @@ export default function App() {
       <UserManagementModal
         isOpen={isUserMgmtOpen}
         onClose={() => setIsUserMgmtOpen(false)}
-        onOpenRegisterModal={() => setIsLoginModalOpen(true)}
         onSuccessToast={showToast}
       />
 

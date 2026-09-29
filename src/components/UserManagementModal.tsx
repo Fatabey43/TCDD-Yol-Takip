@@ -37,7 +37,6 @@ import {
 interface UserManagementModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onOpenRegisterModal?: () => void;
   onSuccessToast?: (msg: string) => void;
 }
 

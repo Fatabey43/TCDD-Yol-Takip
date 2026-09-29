@@ -581,10 +581,26 @@ app.post('/api/auth/login', (req, res) => {
   });
 });
 
-// POST /api/auth/register
+// POST /api/auth/register (Only Admins can register new users, or initial bootstrap if 0 users)
 app.post('/api/auth/register', (req, res) => {
   const { name, email, password, department, role } = req.body;
   const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'Bilinmiyor';
+
+  const currentUser = getAuthUser(req);
+  const users = getUsers();
+  const isFirstUser = users.length === 0;
+
+  // Security check: Only administrators can create new users (unless system is bootstrapping 1st user)
+  if (!isFirstUser && (!currentUser || currentUser.role !== 'admin')) {
+    recordAuditLog({
+      action: 'YETKİSİZ_KAYIT_DENEMESİ',
+      email: email || 'Bilinmiyor',
+      status: 'failed',
+      details: 'Yetkisiz kullanıcı kayıt denemesinde bulundu (Yönetici yetkisi gereklidir)',
+      ip
+    });
+    return res.status(403).json({ error: 'Yeni kullanıcı hesabı oluşturma yetkisi yalnızca Sistem Yöneticisine aittir.' });
+  }
 
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'Ad Soyad, E-posta ve şifre zorunludur' });
@@ -595,7 +611,6 @@ app.post('/api/auth/register', (req, res) => {
   }
 
   const cleanEmail = email.trim().toLowerCase();
-  const users = getUsers();
   if (users.some((u) => u.email.toLowerCase() === cleanEmail)) {
     recordAuditLog({
       action: 'KAYIT_HATASI',
@@ -609,7 +624,6 @@ app.post('/api/auth/register', (req, res) => {
 
   const { salt, hash } = hashPassword(password);
   const isBahadir = cleanEmail === 'bahadirefet@gmail.com' || cleanEmail === 'turkmenhassan34@gmail.com';
-  const isFirstUser = users.length === 0;
   const assignedRole: 'admin' | 'editor' | 'viewer' = (isBahadir || isFirstUser)
     ? 'admin'
     : (role === 'admin' ? 'editor' : (role || 'editor'));
