@@ -1294,17 +1294,18 @@ app.post('/api/points/import', (req, res) => {
         lineName: (p.lineName || 'İçe Aktarılan Hat').trim(),
         locationDesc: (p.locationDesc || '').trim(),
         category: p.category || 'km_marker',
-        lat: Number(p.lat),
-        lng: Number(p.lng),
+        lat: Number(p.lat) || 0,
+        lng: Number(p.lng) || 0,
         description: (p.description || '').trim(),
         textStyle: p.textStyle || null,
         titleTextStyle: p.titleTextStyle || null,
+        levelCrossing: p.levelCrossing || null,
         notes: Array.isArray(p.notes) ? p.notes : [],
         photos: Array.isArray(p.photos) ? p.photos : [],
         createdAt: p.createdAt || new Date().toISOString(),
         updatedAt: p.updatedAt || new Date().toISOString(),
       };
-    }).filter((p) => !isNaN(p.lat) && !isNaN(p.lng));
+    }).filter((p) => (p.lat !== 0 && p.lng !== 0) || Boolean(p.kmValue) || Boolean(p.title));
 
   if (replaceAll) {
     const newIdSet = new Set(validatedPoints.map((p) => p.id));
@@ -1317,18 +1318,32 @@ app.post('/api/points/import', (req, res) => {
   } else {
     validatedPoints.forEach((p) => {
       const normTitle = (p.title || '').trim().toLowerCase();
+      const pKm = (p.kmValue || '').trim().toLowerCase();
       const pLat = Number(p.lat);
       const pLng = Number(p.lng);
 
-      // Match existing ONLY by exact ID or virtually identical coordinates (~5 meters) AND matching title
-      // NEVER collapse different assets (like multiple culverts or switches along a line) together!
+      // Match existing by ID, or coordinates (~10 meters), or KM + crossing/title
       const existing = currentPoints.find((cp) => {
         if (cp.id === p.id) return true;
-        if (!isNaN(pLat) && !isNaN(pLng) && !isNaN(Number(cp.lat)) && !isNaN(Number(cp.lng))) {
+        const cpKm = (cp.kmValue || '').trim().toLowerCase();
+        const cpTitle = (cp.title || '').trim().toLowerCase();
+
+        // 1. Distance match if coords exist
+        if (!isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0 && !isNaN(Number(cp.lat)) && !isNaN(Number(cp.lng))) {
           const dLat = Math.abs(Number(cp.lat) - pLat);
           const dLng = Math.abs(Number(cp.lng) - pLng);
-          if (dLat < 0.00005 && dLng < 0.00005 && normTitle === (cp.title || '').trim().toLowerCase()) return true;
+          if (dLat < 0.0001 && dLng < 0.0001) return true;
         }
+
+        // 2. Exact KM match (e.g. 54+635 === 54+635)
+        if (pKm && cpKm && pKm === cpKm) {
+          if (cp.category === 'crossing' || p.category === 'crossing') return true;
+          if (normTitle === cpTitle || normTitle.includes(cpTitle) || cpTitle.includes(normTitle)) return true;
+        }
+
+        // 3. Exact title match
+        if (normTitle && cpTitle && normTitle === cpTitle) return true;
+
         return false;
       });
 
@@ -1343,9 +1358,18 @@ app.post('/api/points/import', (req, res) => {
         (existing.notes || []).forEach((n: any) => noteMap.set(n.id, n));
         (p.notes || []).forEach((n: any) => noteMap.set(n.id, n));
 
+        // Preserve levelCrossing if existing has it and imported item has null/undefined
+        const finalLevelCrossing = (p.levelCrossing && Object.keys(p.levelCrossing).length > 0)
+          ? p.levelCrossing
+          : (existing.levelCrossing || p.levelCrossing || null);
+
         Object.assign(existing, {
           ...p,
           id: existing.id, // keep original ID
+          lat: (p.lat !== 0 && !isNaN(p.lat)) ? p.lat : existing.lat,
+          lng: (p.lng !== 0 && !isNaN(p.lng)) ? p.lng : existing.lng,
+          category: (p.category === 'crossing' || existing.category === 'crossing') ? 'crossing' : (p.category || existing.category),
+          levelCrossing: finalLevelCrossing,
           photos: Array.from(photoMap.values()),
           notes: Array.from(noteMap.values()),
           updatedAt: (p.updatedAt && p.updatedAt > existing.updatedAt) ? p.updatedAt : existing.updatedAt,

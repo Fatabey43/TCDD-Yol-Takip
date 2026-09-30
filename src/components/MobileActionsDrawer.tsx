@@ -13,6 +13,7 @@ import {
   CheckCircle,
   RefreshCw,
   CloudUpload,
+  FileText,
 } from 'lucide-react';
 
 interface MobileActionsDrawerProps {
@@ -22,6 +23,7 @@ interface MobileActionsDrawerProps {
   onOpenImportExport: () => void;
   onOpenMobileInstall: () => void;
   onOpenPalette: () => void;
+  onOpenReports?: () => void;
   onRefresh: () => void;
   onExportJSON: () => void;
   onSyncPhotos: () => void;
@@ -36,6 +38,7 @@ export const MobileActionsDrawer: React.FC<MobileActionsDrawerProps> = ({
   onOpenImportExport,
   onOpenMobileInstall,
   onOpenPalette,
+  onOpenReports,
   onRefresh,
   onExportJSON,
   onSyncPhotos,
@@ -151,6 +154,23 @@ export const MobileActionsDrawer: React.FC<MobileActionsDrawerProps> = ({
               <span className="text-[10px] text-slate-400">İçe / Dışa Aktar</span>
             </div>
           </button>
+
+          {/* TCDD Resmi Raporlar */}
+          {onOpenReports && (
+            <button
+              onClick={() => {
+                onOpenReports();
+                onClose();
+              }}
+              className="flex items-center gap-2 p-3 bg-sky-950/80 hover:bg-sky-900 active:bg-sky-850 rounded-xl border border-sky-500/50 transition-all font-semibold text-sky-200"
+            >
+              <FileText className="w-4 h-4 text-sky-400" />
+              <div className="text-left leading-tight">
+                <span className="block font-bold">Resmi Raporlar</span>
+                <span className="text-[10px] text-sky-300/80">PDF &amp; Excel Çıktısı</span>
+              </div>
+            </button>
+          )}
 
           {/* JSON Export */}
           <button

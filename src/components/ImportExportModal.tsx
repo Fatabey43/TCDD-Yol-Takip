@@ -1,8 +1,21 @@
 import React, { useState, useRef } from 'react';
 import { RailwayPoint } from '../types.ts';
-import { parseKML, parseGeoJSON, parseCSV, parseNativeJSON, exportToGeoJSON, exportToKML, exportToJSON } from '../utils/kmlParser.ts';
+import {
+  parseKML,
+  parseGeoJSON,
+  parseCSV,
+  parseNativeJSON,
+  parseExcelBuffer,
+  exportToGeoJSON,
+  exportToKML,
+  exportToJSON,
+  exportToExcel,
+} from '../utils/kmlParser.ts';
+import { mergeExcelIntoExistingCrossings, ExcelExtractionResult } from '../utils/excelCrossingProcessor.ts';
+import { parseCulvertExcelRows, mergeCulvertsIntoExistingPoints } from '../utils/excelCulvertProcessor.ts';
+import * as XLSX from 'xlsx';
 import { DeleteConfirmModal } from './DeleteConfirmModal.tsx';
-import { X, Upload, Download, FileText, CheckCircle2, AlertCircle, RefreshCw, Copy, Check } from 'lucide-react';
+import { X, Upload, Download, FileText, CheckCircle2, AlertCircle, RefreshCw, Copy, Check, Table, Image as ImageIcon } from 'lucide-react';
 
 interface ImportExportModalProps {
   isOpen: boolean;
@@ -29,6 +42,8 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
   const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
   const [isResetting, setIsResetting] = useState<boolean>(false);
   const [isCopied, setIsCopied] = useState<boolean>(false);
+  const [excelMergeStats, setExcelMergeStats] = useState<ExcelExtractionResult | null>(null);
+  const [mergedFullPoints, setMergedFullPoints] = useState<RailwayPoint[] | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -69,14 +84,14 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
     if (detected.length === 0) {
       setStatusMessage({
         type: 'error',
-        text: 'Dosya içeriğinde geçerli koordinat ve KM noktası tespit edilemedi. Lütfen KML, GeoJSON veya CSV formatında bir dosya yükleyin.',
+        text: 'Dosya içeriğinde geçerli koordinat ve KM noktası tespit edilemedi. Lütfen Excel (.xlsx), KML, GeoJSON veya CSV formatında bir dosya yükleyin.',
       });
       setParsedPreview([]);
     } else {
       setParsedPreview(detected);
       setStatusMessage({
         type: 'success',
-        text: `${detected.length} adet demiryolu KM noktası başarıyla ayrıştırıldı.`,
+        text: `${detected.length} adet demiryolu noktası başarıyla ayrıştırıldı.`,
       });
     }
   };
@@ -84,6 +99,94 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const lowerName = file.name.toLowerCase();
+
+    // If Excel binary file (.xlsx, .xls)
+    if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const buffer = event.target?.result as ArrayBuffer;
+        if (buffer) {
+          setStatusMessage(null);
+          setExcelMergeStats(null);
+          setMergedFullPoints(null);
+
+          try {
+            // Smart Merge into existing crossings with photo extraction
+            const { updatedPoints, stats } = await mergeExcelIntoExistingCrossings(buffer, points);
+            if (stats.matchedCrossingsCount > 0) {
+              setMergedFullPoints(updatedPoints);
+              setExcelMergeStats(stats);
+              setParsedPreview(
+                updatedPoints.filter((p) =>
+                  stats.details.some((d) => d.pointId === p.id)
+                )
+              );
+              setStatusMessage({
+                type: 'success',
+                text: `Mevcut 92 nokta içindeki ${stats.matchedCrossingsCount} adet hemzemin geçit KM numarasına göre eşleşti! ${stats.extractedPhotosCount > 0 ? `(${stats.extractedPhotosCount} adet fotoğraf Excel'den çıkarıldı)` : ''} Dışarıdan fazladan nokta eklenmeyecek, sadece mevcut geçitler güncellenecek.`,
+              });
+              return;
+            }
+          } catch (excelErr) {
+            console.warn('Excel akıllı birleştirme denemesi:', excelErr);
+          }
+
+          // Check if this is a Culvert (Menfez) Excel sheet (e.g. "712 YOL BAKIM ŞEFLİĞİ MENFEZ LİSTESİ")
+          try {
+            const wb = XLSX.read(buffer, { type: 'array' });
+            let allCulvertRecords: any[] = [];
+            for (const sName of wb.SheetNames) {
+              const ws = wb.Sheets[sName];
+              if (ws) {
+                const sheetCulverts = parseCulvertExcelRows(ws);
+                if (sheetCulverts.length > 0) {
+                  allCulvertRecords = allCulvertRecords.concat(sheetCulverts);
+                }
+              }
+            }
+
+            if (allCulvertRecords.length > 0) {
+              const { updatedPoints, stats } = mergeCulvertsIntoExistingPoints(allCulvertRecords, points);
+              if (stats.matchedCulvertsCount > 0) {
+                setMergedFullPoints(updatedPoints);
+                setParsedPreview(
+                  updatedPoints.filter((p) =>
+                    stats.details.some((d) => d.matched && (d.km === p.kmValue || d.km === p.culvert?.mihverKlm))
+                  )
+                );
+                setStatusMessage({
+                  type: 'success',
+                  text: `Menfez listesindeki ${stats.matchedCulvertsCount} adet menfez haritadaki noktalarla KM bazında başarıyla eşleşti! Açıklık, debuşe yüksekliği ve cinsi güncellenecek.`,
+                });
+                return;
+              }
+            }
+          } catch (culvertErr) {
+            console.warn('Menfez Excel ayrıştırma denemesi:', culvertErr);
+          }
+
+          // Fallback to standard parse if no existing crossings or culverts matched
+          const detected = parseExcelBuffer(buffer, targetLine);
+          if (detected.length === 0) {
+            setStatusMessage({
+              type: 'error',
+              text: 'Excel dosyasında geçerli satır veya KM bilgisi tespit edilemedi.',
+            });
+            setParsedPreview([]);
+          } else {
+            setParsedPreview(detected);
+            setStatusMessage({
+              type: 'success',
+              text: `Excel tablosundan ${detected.length} adet satır okundu.`,
+            });
+          }
+        }
+      };
+      reader.readAsArrayBuffer(file);
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -104,7 +207,15 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
     if (parsedPreview.length === 0) return;
     setIsProcessing(true);
     try {
-      await onImportSuccess(parsedPreview, replaceAll);
+      if (mergedFullPoints && excelMergeStats && excelMergeStats.matchedCrossingsCount > 0) {
+        // Only update matched points, do NOT delete or replace the entire database
+        const updatedOnly = mergedFullPoints.filter((p) =>
+          excelMergeStats.details.some((d) => d.pointId === p.id)
+        );
+        await onImportSuccess(updatedOnly, false);
+      } else {
+        await onImportSuccess(parsedPreview, replaceAll);
+      }
       onClose();
     } catch (err: any) {
       setStatusMessage({
@@ -153,7 +264,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
             }`}
           >
             <Upload className="w-3.5 h-3.5" />
-            <span>Google Haritalar'dan İçe Aktar (KML/CSV)</span>
+            <span>Excel / KML / CSV İçe Aktar</span>
           </button>
           <button
             id="tab-export-btn"
@@ -165,7 +276,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
             }`}
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Dışa Aktar &amp; Yedekle</span>
+            <span>Excel / KML Dışa Aktar</span>
           </button>
         </div>
 
@@ -173,8 +284,14 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
         <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
           {activeTab === 'import' ? (
             <div className="space-y-4">
-              <div className="bg-sky-50/70 p-3 rounded-xl border border-sky-200/80 text-xs text-sky-900 leading-relaxed">
-                <strong>Google Haritalar (My Maps) Verilerinizi Aktarın:</strong> Google Haritalarım'da (Google My Maps) kaydettiğiniz demiryolu KM noktalarını "KML / KMZ olarak dışa aktar" seçeneğiyle indirip buraya yükleyebilirsiniz. Veriler anında tüm cihazlarınıza senkronize edilir.
+              <div className="bg-emerald-50/80 p-3 rounded-xl border border-emerald-200/90 text-xs text-emerald-950 leading-relaxed space-y-1">
+                <div className="font-bold flex items-center gap-1 text-emerald-900">
+                  <Table className="w-4 h-4 text-emerald-700" />
+                  <span>Excel (.xlsx, .xls) ve Harita Dosyalarınızı Kolayca Yükleyin:</span>
+                </div>
+                <p>
+                  Elinizdeki Excel tablosunu doğrudan buraya sürükleyip bırakabilirsiniz. Sistem sütun başlıklarını (KM, Başlık/İsim, Enlem/Boylam, Geçit Tipi, Kaplama Cinsi, Taşıt/Tren Sayısı, Açıklık vb.) otomatik tanır ve mevcut noktalarınızla birleştirir.
+                </p>
               </div>
 
               {/* Line designation */}
@@ -200,17 +317,17 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".kml,.geojson,.json,.csv,.txt"
+                  accept=".xlsx,.xls,.kml,.geojson,.json,.csv,.txt"
                   onChange={handleFileUpload}
                   className="hidden"
                   id="file-import-input"
                 />
-                <FileText className="w-10 h-10 text-slate-400 mx-auto mb-2" />
-                <p className="text-xs font-semibold text-slate-700">
-                  KML, GeoJSON veya CSV dosyasını buraya sürükleyin ya da seçin
+                <Table className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
+                <p className="text-xs font-semibold text-slate-800">
+                  Excel (.xlsx, .xls), KML, GeoJSON veya CSV dosyasını seçin ya da sürükleyin
                 </p>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Google Haritalar KML dışa aktarımı tam uyumludur
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Excel geçit tabloları, Google Haritalar KML ve CBS dosyaları tam uyumludur
                 </p>
               </div>
 
@@ -262,32 +379,76 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                 <div className="space-y-3 pt-2 border-t border-slate-200">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-slate-800">
-                      Tespit Edilen Noktalar ({parsedPreview.length})
+                      {excelMergeStats ? `Eşleşen Hemzemin Geçitler (${parsedPreview.length})` : `Tespit Edilen Noktalar (${parsedPreview.length})`}
                     </span>
-                    <label className="flex items-center gap-1.5 cursor-pointer text-slate-600 select-none">
-                      <input
-                        id="replace-all-checkbox"
-                        type="checkbox"
-                        checked={replaceAll}
-                        onChange={(e) => setReplaceAll(e.target.checked)}
-                        className="rounded text-sky-600"
-                      />
-                      <span>Mevcut kayıtları sil, sıfırdan yükle</span>
-                    </label>
+                    {!excelMergeStats && (
+                      <label className="flex items-center gap-1.5 cursor-pointer text-slate-600 select-none">
+                        <input
+                          id="replace-all-checkbox"
+                          type="checkbox"
+                          checked={replaceAll}
+                          onChange={(e) => setReplaceAll(e.target.checked)}
+                          className="rounded text-sky-600"
+                        />
+                        <span>Mevcut kayıtları sil, sıfırdan yükle</span>
+                      </label>
+                    )}
+                    {excelMergeStats && (
+                      <span className="text-[11px] font-medium text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-full">
+                        Mevcut 92 Nokta Korunuyor
+                      </span>
+                    )}
                   </div>
 
-                  <div className="max-h-40 overflow-y-auto space-y-1.5 border border-slate-200 rounded-xl p-2 bg-slate-50 text-xs">
-                    {parsedPreview.slice(0, 15).map((p, idx) => (
-                      <div key={idx} className="flex justify-between items-center bg-white p-2 rounded-lg border border-slate-100">
-                        <span className="font-bold text-slate-800">{p.title}</span>
-                        <span className="font-mono text-[11px] text-slate-500">
-                          {p.lat?.toFixed(4)}, {p.lng?.toFixed(4)}
-                        </span>
+                  {excelMergeStats && (
+                    <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-xs text-amber-900 space-y-1">
+                      <div className="font-bold flex items-center gap-1.5 text-amber-950">
+                        <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Excel'den Alınacak Bilgiler &amp; Fotoğraflar:</span>
                       </div>
-                    ))}
-                    {parsedPreview.length > 15 && (
+                      <p className="text-[11px] leading-relaxed">
+                        Haritanızdaki mevcut 92 nokta bozulmadan, tespit edilen <b>{excelMergeStats.matchedCrossingsCount} hemzemin geçidin</b> özel sekmesindeki teknik özellikleri doldurulacak {excelMergeStats.extractedPhotosCount > 0 ? `ve ${excelMergeStats.extractedPhotosCount} adet fotoğraf eklenecektir.` : '.'}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 border border-slate-200 rounded-xl p-2 bg-slate-50 text-xs">
+                    {parsedPreview.slice(0, 20).map((p, idx) => {
+                      const statItem = excelMergeStats?.details.find((d) => d.pointId === p.id);
+                      return (
+                        <div key={idx} className="flex justify-between items-center bg-white p-2 rounded-lg border border-slate-100">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="font-bold text-slate-800 truncate">{p.title}</span>
+                            {p.category === 'crossing' && (
+                              <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.5 rounded">
+                                Geçit
+                              </span>
+                            )}
+                            {statItem && statItem.photosAdded > 0 && (
+                              <span className="text-[10px] bg-sky-100 text-sky-800 font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                                <ImageIcon className="w-2.5 h-2.5" />
+                                +{statItem.photosAdded} Foto
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {p.kmValue && (
+                              <span className="font-mono text-[11px] font-bold text-slate-700 bg-slate-100 px-1 py-0.5 rounded">
+                                KM {p.kmValue}
+                              </span>
+                            )}
+                            {statItem?.fieldsUpdated && statItem.fieldsUpdated.length > 0 && (
+                              <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-150">
+                                {statItem.fieldsUpdated.length} Özellik Güncellenecek
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {parsedPreview.length > 20 && (
                       <div className="text-center text-slate-500 text-[11px] pt-1">
-                        ...ve {parsedPreview.length - 15} nokta daha
+                        ...ve {parsedPreview.length - 20} nokta daha
                       </div>
                     )}
                   </div>
@@ -296,11 +457,15 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                     id="apply-import-btn"
                     onClick={handleApplyImport}
                     disabled={isProcessing}
-                    className="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-md transition-colors flex items-center justify-center gap-2"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-md transition-colors flex items-center justify-center gap-2"
                   >
                     <Upload className="w-4 h-4" />
                     <span>
-                      {isProcessing ? 'Senkronize Ediliyor...' : `${parsedPreview.length} Noktayı Tüm Cihazlara Yükle`}
+                      {isProcessing
+                        ? 'Senkronize Ediliyor...'
+                        : excelMergeStats
+                        ? `${excelMergeStats.matchedCrossingsCount} Geçidin Bilgilerini & Fotoğraflarını İşle`
+                        : `${parsedPreview.length} Noktayı Yükle`}
                     </span>
                   </button>
                 </div>
@@ -315,9 +480,21 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
+                  id="export-excel-btn"
+                  onClick={() => exportToExcel(points)}
+                  className="flex flex-col items-center justify-center p-4 bg-emerald-50/70 hover:bg-emerald-100/70 border border-emerald-200 hover:border-emerald-300 rounded-2xl transition-all group col-span-1 sm:col-span-2 shadow-xs cursor-pointer"
+                >
+                  <Table className="w-6 h-6 text-emerald-700 mb-1.5 group-hover:scale-110 transition-transform" />
+                  <span className="font-bold text-xs text-emerald-950">Excel (.xlsx) Tablosu Olarak İndir</span>
+                  <span className="text-[11px] text-emerald-800 text-center mt-0.5">
+                    Tüm KM noktaları, koordinatlar ve 10 adet hemzemin geçit teknik parametresi
+                  </span>
+                </button>
+
+                <button
                   id="export-json-btn"
                   onClick={() => exportToJSON(points)}
-                  className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-2xl transition-all group"
+                  className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-2xl transition-all group cursor-pointer"
                 >
                   <Download className="w-6 h-6 text-indigo-600 mb-2 group-hover:scale-110 transition-transform" />
                   <span className="font-bold text-xs text-slate-800">JSON Olarak İndir (Tam Yedek)</span>

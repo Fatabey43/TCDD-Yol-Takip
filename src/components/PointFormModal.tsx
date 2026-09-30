@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RailwayPoint, RailwayPointCategory, TextStyleConfig, LevelCrossingDetails } from '../types.ts';
+import { RailwayPoint, RailwayPointCategory, TextStyleConfig, LevelCrossingDetails, CulvertDetails } from '../types.ts';
 import { DEFAULT_TEXT_STYLE, getTextStyleInline } from '../utils/textStyleHelper.ts';
 import { extractKmFromText, DEFAULT_CATEGORY_COLORS } from '../utils/categoryColors.ts';
 import { getStoredLines, addCustomLine, removeCustomLine } from '../utils/customLinesStorage.ts';
@@ -53,7 +53,8 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
   const [textStyle, setTextStyle] = useState<TextStyleConfig>(DEFAULT_TEXT_STYLE);
   const [titleTextStyle, setTitleTextStyle] = useState<TextStyleConfig>({ ...DEFAULT_TEXT_STYLE, fontWeight: 'bold' });
   const [levelCrossing, setLevelCrossing] = useState<LevelCrossingDetails>({});
-  const [activeFormTab, setActiveFormTab] = useState<'general' | 'crossing'>('general');
+  const [culvert, setCulvert] = useState<CulvertDetails>({});
+  const [activeFormTab, setActiveFormTab] = useState<'general' | 'crossing' | 'culvert'>('general');
   const [isSaving, setIsSaving] = useState(false);
   const [isGettingGps, setIsGettingGps] = useState(false);
   const [formError, setFormError] = useState('');
@@ -86,13 +87,21 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
       setTextStyle(editingPoint.textStyle || DEFAULT_TEXT_STYLE);
       setTitleTextStyle(editingPoint.titleTextStyle || { ...DEFAULT_TEXT_STYLE, fontWeight: 'bold' });
       setLevelCrossing(editingPoint.levelCrossing || {});
-      setActiveFormTab(editingPoint.category === 'crossing' ? 'crossing' : 'general');
+      setCulvert(editingPoint.culvert || {});
+      setActiveFormTab(
+        editingPoint.category === 'crossing'
+          ? 'crossing'
+          : editingPoint.category === 'culvert'
+          ? 'culvert'
+          : 'general'
+      );
     } else {
       // If we have saved lines, default to the first one or leave empty for user to type
       if (!lineName && currentAvailable.length > 0) {
         setLineName(currentAvailable[0]);
       }
       setLevelCrossing({});
+      setCulvert({});
       setActiveFormTab('general');
       // If we just got initialCoords (e.g. from map click), update lat/lng without erasing what user already typed!
       if (initialCoords) {
@@ -183,6 +192,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
     setIsSaving(true);
     try {
       const crossingPayload = category === 'crossing' ? levelCrossing : undefined;
+      const culvertPayload = category === 'culvert' ? culvert : undefined;
 
       if (editingPoint) {
         await onSave({
@@ -198,6 +208,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
           textStyle,
           titleTextStyle,
           levelCrossing: crossingPayload,
+          culvert: culvertPayload,
         });
       } else {
         await onSave({
@@ -212,6 +223,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
           textStyle,
           titleTextStyle,
           levelCrossing: crossingPayload,
+          culvert: culvertPayload,
         });
       }
       onClose();
@@ -233,6 +245,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
       setIsAddingNewLine(false);
       setNewLineInput('');
       setLevelCrossing({});
+      setCulvert({});
       setActiveFormTab('general');
     }
     onClose();
@@ -639,8 +652,43 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
               </div>
             ) : null}
 
+            {/* If category is culvert, display dedicated Tab Bar: Genel Açıklama / Menfez Özellikleri */}
+            {category === 'culvert' ? (
+              <div className="bg-indigo-500/10 p-1 rounded-xl flex items-center gap-1 border border-indigo-500/30">
+                <button
+                  type="button"
+                  id="form-tab-general-culvert-btn"
+                  onClick={() => setActiveFormTab('general')}
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    activeFormTab === 'general'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-indigo-950 hover:bg-white/60'
+                  }`}
+                >
+                  <Train className="w-3.5 h-3.5" />
+                  <span>Genel Açıklama</span>
+                </button>
+                <button
+                  type="button"
+                  id="form-tab-culvert-btn"
+                  onClick={() => setActiveFormTab('culvert')}
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    activeFormTab === 'culvert'
+                      ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-400/50'
+                      : 'text-indigo-950 hover:bg-white/60'
+                  }`}
+                >
+                  <Sliders className="w-3.5 h-3.5" />
+                  <span>Menfez Özellikleri (Özel)</span>
+                  {Object.values(culvert).some(Boolean) && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  )}
+                </button>
+              </div>
+            ) : null}
+
             {/* TAB CONTENT 1: GENEL AÇIKLAMA */}
-            {category !== 'crossing' || activeFormTab === 'general' ? (
+            {activeFormTab === 'general' ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-semibold text-slate-700">
@@ -667,7 +715,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
                   className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none resize-none transition-all shadow-inner"
                 />
               </div>
-            ) : (
+            ) : category === 'crossing' && activeFormTab === 'crossing' ? (
               /* TAB CONTENT 2: HEMZEMİN GEÇİT ÖZELLİKLERİ SEKMESİ */
               <div className="space-y-3 bg-gradient-to-b from-amber-50/70 to-slate-50 p-3.5 rounded-2xl border border-amber-300/80 shadow-xs animate-in fade-in duration-150">
                 <div className="flex items-center justify-between border-b border-amber-200/80 pb-2">
@@ -865,15 +913,210 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
                     </label>
                     <input
                       type="text"
-                      placeholder="Örn: R=600m Kurp İçi / Düz Hat (Aliman)"
+                      placeholder="Örn: YNMAN veya R=600m"
                       value={levelCrossing.curveInfo || ''}
                       onChange={(e) => setLevelCrossing((prev) => ({ ...prev, curveInfo: e.target.value }))}
                       className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
                     />
                   </div>
+
+                  {/* 11. Karayolunun Ait Olduğu Kuruluş */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <span>🏛️</span>
+                      <span>Karayolunun Ait Olduğu Kuruluş</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: İL ÖZEL İDARESİ, KARAYOLLARI, BELEDİYE"
+                      value={levelCrossing.roadBelonging || ''}
+                      onChange={(e) => setLevelCrossing((prev) => ({ ...prev, roadBelonging: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* 12. Şube Şefliği */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <span>🏢</span>
+                      <span>Şube Şefliği</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: 71, 72 Kütahya"
+                      value={levelCrossing.subeSefligi || ''}
+                      onChange={(e) => setLevelCrossing((prev) => ({ ...prev, subeSefligi: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* 13. Nereleri Bağladığı */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <span>📍</span>
+                      <span>Nereleri Bağladığı (Güzergah)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: Uluköy - Bayramşah"
+                      value={levelCrossing.nereleriBagladigi || ''}
+                      onChange={(e) => setLevelCrossing((prev) => ({ ...prev, nereleriBagladigi: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                    />
+                  </div>
                 </div>
               </div>
-            )}
+            ) : category === 'culvert' && activeFormTab === 'culvert' ? (
+              /* TAB CONTENT 3: MENFEZ ÖZELLİKLERİ SEKMESİ (712 YOL BAKIM ŞEFLİĞİ) */
+              <div className="space-y-3 bg-gradient-to-b from-indigo-50/70 to-slate-50 p-3.5 rounded-2xl border border-indigo-300/80 shadow-xs animate-in fade-in duration-150">
+                <div className="flex items-center justify-between border-b border-indigo-200/80 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1 rounded-lg bg-indigo-600 text-white">
+                      <Sliders className="w-4 h-4" />
+                    </span>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900">712 Yol Bakım Şefliği Menfez Parametreleri</h4>
+                      <p className="text-[10px] text-slate-500">Mihver klm, serbest/mesnet açıklık, debuşe yüksekliği ve cinsi</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-900 border border-indigo-300">
+                    Menfez Özel
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                  {/* Menfez Cinsi */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <span>🧱</span>
+                      <span>Menfez Cinsi</span>
+                    </label>
+                    <input
+                      type="text"
+                      list="culvert-cinsi-options"
+                      placeholder="Örn: Taş Kapak, Demir Boru, Ferbeton, Taş Kemer"
+                      value={culvert.cinsi || ''}
+                      onChange={(e) => setCulvert((prev) => ({ ...prev, cinsi: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
+                    />
+                    <datalist id="culvert-cinsi-options">
+                      <option value="Taş Kapak" />
+                      <option value="Demir Boru" />
+                      <option value="Ferbeton" />
+                      <option value="Ferbeton-Betonarme" />
+                      <option value="Taş Kemer" />
+                      <option value="Betonarme Kutu" />
+                      <option value="Büz (Koruge)" />
+                    </datalist>
+                  </div>
+
+                  {/* Hattı */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <Train className="w-3 h-3 text-indigo-600" />
+                      <span>Hattı</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: Esk.-Konya"
+                      value={culvert.hatti || lineName || ''}
+                      onChange={(e) => setCulvert((prev) => ({ ...prev, hatti: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* Mihver Klm.si */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <MapPin className="w-3 h-3 text-blue-600" />
+                      <span>Mihver Klm.si</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: 54+673"
+                      value={culvert.mihverKlm || kmValue || ''}
+                      onChange={(e) => setCulvert((prev) => ({ ...prev, mihverKlm: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* Açıklığı - Serbest (m) */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <span>📏</span>
+                      <span>Açıklığı - Serbest (m)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: 0,60 veya 4,00"
+                      value={culvert.aciklikSerbest !== undefined ? String(culvert.aciklikSerbest) : ''}
+                      onChange={(e) => setCulvert((prev) => ({ ...prev, aciklikSerbest: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* Açıklığı - Mesnet (Adet) */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <span>📐</span>
+                      <span>Açıklığı - Mesnet (Adet)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: 1"
+                      value={culvert.aciklikMesnet !== undefined ? String(culvert.aciklikMesnet) : ''}
+                      onChange={(e) => setCulvert((prev) => ({ ...prev, aciklikMesnet: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* Debuşe Yüksekliği (m) */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <CornerUpRight className="w-3 h-3 text-emerald-600" />
+                      <span>Debuşe Yüksekliği (m)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: 0,60 veya 0,70"
+                      value={culvert.debuseYuksekligi !== undefined ? String(culvert.debuseYuksekligi) : ''}
+                      onChange={(e) => setCulvert((prev) => ({ ...prev, debuseYuksekligi: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* Yapım Yılı */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <span>📅</span>
+                      <span>Yapım Yılı</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: 1894"
+                      value={culvert.yapimYili || ''}
+                      onChange={(e) => setCulvert((prev) => ({ ...prev, yapimYili: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* Dingil Basıncı */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                      <span>⚖️</span>
+                      <span>Dingil Basıncı (Ton)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Örn: 22,5"
+                      value={culvert.dingilBasinci !== undefined ? String(culvert.dingilBasinci) : ''}
+                      onChange={(e) => setCulvert((prev) => ({ ...prev, dingilBasinci: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {/* Actions */}

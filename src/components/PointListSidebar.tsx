@@ -130,6 +130,11 @@ export const PointListSidebar: React.FC<PointListSidebarProps> = ({
                         <span>{point.photos.length}</span>
                       </span>
                     )}
+                    {point.category === 'crossing' && point.levelCrossing && Object.values(point.levelCrossing).some(Boolean) && (
+                      <span className="flex items-center gap-0.5 text-amber-700 bg-amber-50 px-1 py-0.2 rounded border border-amber-200 text-[10px] font-bold">
+                        <span>Geçit Verisi</span>
+                      </span>
+                    )}
                   </div>
                 </div>
 

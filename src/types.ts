@@ -27,16 +27,36 @@ export interface TextStyleConfig {
  * Hemzemin Geçitler (Crossing) kategorisine özel teknik ve operasyonel geçit özellikleri
  */
 export interface LevelCrossingDetails {
-  crossingType?: string; // Geçit Tipi: Örn: Otomatik Bariyerli, Mekanik/Elle Kumandalı, Serbest/İşaretsiz, Yaya Geçidi
-  surfaceType?: string; // Kaplama Cinsi: Örn: Kauçuk (Bodan/Strail), Asfalt, Beton Parke, Ahşap
+  crossingType?: string; // Geçit Tipi: Örn: Flaşörlü+Çanlı Otomatik Bariyerli
+  surfaceType?: string; // Kaplama Cinsi: Örn: Lastik (Kauçuk), Kompozit, Asfalt
   dailyVehicleCount?: string | number; // 24 Saatte Geçen Ortalama Taşıt Adedi
   dailyTrainCount?: string | number; // 24 Saatte Geçen Ortalama Tren Adedi
   clearanceWidth?: string; // Geçit Açıklığı / Yol Genişliği (metre)
-  skewAngle?: string; // Verevlik Açısı (Derece cinsinden, örn: 75° veya 90° dik)
-  intersectedTrackCount?: string | number; // Kestiği Hat Adedi (Tek hat, çift hat, vb.)
+  skewAngle?: string; // Verevlik Açısı (Derece cinsinden, örn: 90)
+  intersectedTrackCount?: string | number; // Kestiği Hat Adedi
   minSightDistance?: string; // Trenin Min. Görüş Mesafesi (metre)
-  railwayGradient?: string; // Demiryolunun Eğimi (Binde - ‰, örn: ‰ 12)
-  curveInfo?: string; // Kurp Bilgileri (Yarıçap R, deve, kurp içi/dışı vb.)
+  railwayGradient?: string; // Demiryolunun Eğimi (Binde - ‰)
+  curveInfo?: string; // Kurp Bilgileri (YNMAN vb.)
+  subeSefligi?: string; // Şube Şefliği (Örn: 71, 72 Kütahya)
+  roadBelonging?: string; // Karayolunun Ait Olduğu Kuruluş (Örn: İl Özel İdaresi, Karayolları, Belediye)
+  nereleriBagladigi?: string; // Nereleri Bağladığı (Örn: Uluköy - Bayramşah)
+  bulunduguIl?: string; // Bulunduğu İl (Örn: Kütahya)
+}
+
+/**
+ * Menfezler (Culvert) kategorisine özel TCDD Yol Bakım Şefliği Menfez Bilgileri
+ */
+export interface CulvertDetails {
+  siraNo?: number | string; // Sıra No
+  hatti?: string; // Hattı (Örn: Esk.-Konya)
+  mihverKlm?: string; // Mihver Klm.si (Örn: 54+673)
+  aciklikSerbest?: string | number; // Açıklığı - Serbest (m) (Örn: 0,60 veya 4,00)
+  aciklikMesnet?: string | number; // Açıklığı - Mesnet (Adet/Göz) (Örn: 1)
+  debuseYuksekligi?: string | number; // Debuşe Yüksekliği (m) (Örn: 0,60 veya 0,70)
+  yapimYili?: string | number; // Yapım Yılı (Örn: 1894)
+  dingilBasinci?: string | number; // Dingil Basıncı (Ton) (Örn: 22,5)
+  cinsi?: string; // Cinsi (Örn: Taş Kapak, Demir Boru, Ferbeton, Ferbeton-Betonarme, Taş Kemer)
+  bakimSefligi?: string; // Bakım Şefliği (Örn: 712 YOL BAKIM ŞEFLİĞİ)
 }
 
 export interface PointNote {
@@ -54,6 +74,22 @@ export interface PointPhoto {
   takenAt: string;
 }
 
+/**
+ * Yapılan İş / Bakım / Onarım Kayıtları (İş Raporları için)
+ */
+export interface WorkLog {
+  id: string;
+  title: string; // Örn: Balast Takviyesi, Travers Değişimi, Kaynak Taşlama, Menfez Temizliği
+  workType: 'bakim' | 'onarim' | 'yenileme' | 'muayene' | 'temizlik' | 'diger';
+  performedAt: string; // Tarih
+  performedBy: string; // Ekip / Şeflik / Personel
+  description: string; // Yapılan işin detayı
+  crewCount?: number | string; // Çalışan personel sayısı
+  materialsUsed?: string; // Kullanılan malzeme (Örn: 4 adet B70 travers, 2 çuval çimento)
+  photos?: PointPhoto[]; // İşe ait öncesi/sonrası fotoğraflar
+  status: 'tamamlandi' | 'devam_ediyor' | 'planlandi';
+}
+
 export interface RailwayPoint {
   id: string;
   title: string;
@@ -66,11 +102,13 @@ export interface RailwayPoint {
   description: string;
   notes: PointNote[];
   photos: PointPhoto[];
+  workLogs?: WorkLog[]; // Yapılan iş kayıtları
   createdAt: string;
   updatedAt: string;
   textStyle?: TextStyleConfig;
   titleTextStyle?: TextStyleConfig;
   levelCrossing?: LevelCrossingDetails;
+  culvert?: CulvertDetails;
 }
 
 export interface FilterOptions {

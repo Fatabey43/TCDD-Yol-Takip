@@ -20,6 +20,11 @@ import { PointFormModal } from './components/PointFormModal.tsx';
 import { PointAddChoiceModal } from './components/PointAddChoiceModal.tsx';
 import { ImportExportModal } from './components/ImportExportModal.tsx';
 import { MobileInstallModal } from './components/MobileInstallModal.tsx';
+import { ReportModal } from './components/ReportModal.tsx';
+import { WorkLogModal } from './components/WorkLogModal.tsx';
+import { LiveKmIndicator } from './components/LiveKmIndicator.tsx';
+import { calculateLiveRailwayKm, NearestKmResult } from './utils/liveRailwayKm.ts';
+import { WorkLog } from './types.ts';
 import { Header } from './components/Header.tsx';
 import { PointListSidebar } from './components/PointListSidebar.tsx';
 import { ColorPaletteTabBar } from './components/ColorPaletteTabBar.tsx';
@@ -67,6 +72,15 @@ export default function App() {
   const [prevUser, setPrevUser] = useState<any>(user);
   const [isImportExportOpen, setIsImportExportOpen] = useState<boolean>(false);
   const [isMobileInstallOpen, setIsMobileInstallOpen] = useState<boolean>(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
+  const [workLogPoint, setWorkLogPoint] = useState<RailwayPoint | null>(null);
+  
+  // Live GPS KM State
+  const [liveGpsCoords, setLiveGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [nearestRailwayKm, setNearestRailwayKm] = useState<NearestKmResult | null>(null);
+  const [isLiveGpsActive, setIsLiveGpsActive] = useState<boolean>(false);
+  const [isGpsLocating, setIsGpsLocating] = useState<boolean>(false);
+
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallBannerDismissed, setIsInstallBannerDismissed] = useState<boolean>(() => {
     try {
@@ -684,6 +698,107 @@ export default function App() {
     }
   };
 
+  // Add / Update WorkLog for a point
+  const handleSaveWorkLog = async (pointId: string, newLog: WorkLog) => {
+    const pt = points.find((p) => p.id === pointId);
+    if (!pt) return;
+    const currentLogs = pt.workLogs || [];
+    const updatedLogs = [newLog, ...currentLogs.filter((l) => l.id !== newLog.id)];
+    const updatedPoint: RailwayPoint = {
+      ...pt,
+      workLogs: updatedLogs,
+      updatedAt: new Date().toISOString(),
+    };
+    await updateExistingPoint(updatedPoint);
+    setPoints((prev) => prev.map((p) => (p.id === pointId ? updatedPoint : p)));
+    if (selectedPoint?.id === pointId) {
+      setSelectedPoint(updatedPoint);
+    }
+    if (workLogPoint?.id === pointId) {
+      setWorkLogPoint(updatedPoint);
+    }
+    broadcastLocalChange();
+    showToast('Saha iş / bakım kaydı eklendi.');
+  };
+
+  // Delete WorkLog from a point
+  const handleDeleteWorkLog = async (pointId: string, logId: string) => {
+    const pt = points.find((p) => p.id === pointId);
+    if (!pt) return;
+    const updatedLogs = (pt.workLogs || []).filter((l) => l.id !== logId);
+    const updatedPoint: RailwayPoint = {
+      ...pt,
+      workLogs: updatedLogs,
+      updatedAt: new Date().toISOString(),
+    };
+    await updateExistingPoint(updatedPoint);
+    setPoints((prev) => prev.map((p) => (p.id === pointId ? updatedPoint : p)));
+    if (selectedPoint?.id === pointId) {
+      setSelectedPoint(updatedPoint);
+    }
+    if (workLogPoint?.id === pointId) {
+      setWorkLogPoint(updatedPoint);
+    }
+    broadcastLocalChange();
+    showToast('İş kaydı silindi.');
+  };
+
+  // Live GPS KM Tracking Handler
+  const handleRefreshGps = useCallback(() => {
+    if (!navigator.geolocation) {
+      showToast('Cihazınızda GPS / Konum servisi desteklenmiyor.');
+      return;
+    }
+
+    setIsGpsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setIsGpsLocating(false);
+        setIsLiveGpsActive(true);
+        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setLiveGpsCoords(coords);
+        const kmResult = calculateLiveRailwayKm(coords.lat, coords.lng, points);
+        setNearestRailwayKm(kmResult);
+        if (kmResult) {
+          showToast(`Canlı Konum: KM ${kmResult.chainageKm} (${kmResult.distanceToRailMeters}m mesafe)`);
+        }
+      },
+      (err) => {
+        setIsGpsLocating(false);
+        console.warn('GPS hatası:', err);
+        showToast('Canlı GPS konumu alınamadı. Lütfen konum iznini kontrol edin.');
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+    );
+  }, [points]);
+
+  // Pan map to live GPS location
+  const handlePanToMyGps = () => {
+    if (liveGpsCoords) {
+      // Temporarily create a synthetic point or pan map
+      setSelectedPoint({
+        id: 'live-gps-position',
+        title: `Bulunduğunuz Konum (KM ${nearestRailwayKm?.chainageKm || '?'})`,
+        kmValue: nearestRailwayKm?.chainageKm || '',
+        lineName: nearestRailwayKm?.lineName || 'Eskişehir - Konya',
+        category: 'other',
+        lat: liveGpsCoords.lat,
+        lng: liveGpsCoords.lng,
+        description: `Canlı GPS Konumu: En yakın nokta ${nearestRailwayKm?.nearestPointTitle || '-'}`,
+        notes: [],
+        photos: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      if (viewMode === 'list') {
+        setViewMode('map');
+        setActiveTab('map');
+      }
+    } else {
+      handleRefreshGps();
+    }
+  };
+
   // Batch import
   const handleImportSuccess = async (importedPoints: Partial<RailwayPoint>[], replaceAll: boolean) => {
     await batchImportPoints(importedPoints, replaceAll);
@@ -748,6 +863,7 @@ export default function App() {
         onOpenAddModal={handleOpenAddModal}
         onOpenImportExport={() => setIsImportExportOpen(true)}
         onOpenMobileInstall={() => setIsMobileInstallOpen(true)}
+        onOpenReports={() => setIsReportModalOpen(true)}
         onToggleAddMode={() => setIsAddMode((prev) => !prev)}
         onOpenPalette={() => setActiveTab('palette')}
         isPaletteActive={activeTab === 'palette'}
@@ -859,6 +975,7 @@ export default function App() {
             onAddPhoto={handleAddPhoto}
             onDeletePhoto={handleDeletePhoto}
             onStartMeasure={handleStartMeasure}
+            onOpenWorkLogs={(pt) => setWorkLogPoint(pt)}
             onPanToPoint={(pt) => {
               setSelectedPoint(pt);
               if (viewMode === 'list') {
@@ -869,6 +986,15 @@ export default function App() {
           />
         </ErrorBoundary>
       </main>
+
+      {/* Live Railway GPS KM Chainage Indicator */}
+      <LiveKmIndicator
+        gpsLocation={liveGpsCoords}
+        nearestKm={nearestRailwayKm}
+        isLocating={isGpsLocating}
+        onRefreshGps={handleRefreshGps}
+        onPanToMyLocation={handlePanToMyGps}
+      />
 
       {/* Point Add Method Choice Modal */}
       <PointAddChoiceModal
@@ -975,12 +1101,31 @@ export default function App() {
         onOpenImportExport={() => setIsImportExportOpen(true)}
         onOpenMobileInstall={() => setIsMobileInstallOpen(true)}
         onOpenPalette={() => setActiveTab('palette')}
+        onOpenReports={() => setIsReportModalOpen(true)}
         onRefresh={handleRefresh}
         onExportJSON={handleExportJSON}
         onSyncPhotos={handleSyncPhotos}
         onOpenUserManagement={isAdmin ? () => setIsUserMgmtOpen(true) : undefined}
         isRefreshing={isRefreshing}
       />
+
+      {/* TCDD Resmi Raporlar Modalı (Menfez, Geçit, Yapılan İşler) */}
+      <ReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        points={points}
+      />
+
+      {/* Yapılan Saha İşleri & Bakım Defteri Modalı */}
+      {workLogPoint && (
+        <WorkLogModal
+          isOpen={!!workLogPoint}
+          onClose={() => setWorkLogPoint(null)}
+          point={workLogPoint}
+          onSaveWorkLog={handleSaveWorkLog}
+          onDeleteWorkLog={handleDeleteWorkLog}
+        />
+      )}
 
       {/* Floating Install Prompt Banner (Telefona / Masaüstüne Yükle) */}
       {!isInstallBannerDismissed && (

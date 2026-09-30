@@ -1,5 +1,6 @@
 import { RailwayPoint, RailwayPointCategory } from '../types.ts';
 import { getPointsFromIDB } from './dbStorage.ts';
+import * as XLSX from 'xlsx';
 
 /**
  * Extracts KM value from text like "KM 142+250", "Km 14+300", "142.500", "KM 120"
@@ -61,6 +62,36 @@ export function parseKML(kmlText: string, defaultLine: string = 'Kayıtlı Demir
       if (!isNaN(lat) && !isNaN(lng)) {
         const fullText = `${title} ${description}`;
         const kmVal = extractKmValue(fullText) || (title.startsWith('KM') ? title : '');
+        const category = guessCategory(fullText);
+
+        let parsedCrossing: any = undefined;
+        if (category === 'crossing' || description.includes('Geçit') || description.includes('Bariyer') || description.includes('Kaplama')) {
+          const mType = description.match(/(?:Geçit Tipi|crossingType)\s*[:=]?\s*([^\n\r<•]+)/i);
+          const mSurf = description.match(/(?:Kaplama Cinsi|surfaceType)\s*[:=]?\s*([^\n\r<•]+)/i);
+          const mVehicle = description.match(/(?:24s? Ort\.? Taşıt|Taşıt Sayısı|Taşıt Adedi|dailyVehicleCount)\s*[:=]?\s*([^\n\r<•]+)/i);
+          const mTrain = description.match(/(?:24s? Ort\.? Tren|Tren Sayısı|Tren Adedi|dailyTrainCount)\s*[:=]?\s*([^\n\r<•]+)/i);
+          const mClear = description.match(/(?:Açıklık|Geçit Açıklığı|clearanceWidth)\s*[:=]?\s*([^\n\r<•]+)/i);
+          const mSkew = description.match(/(?:Verevlik Açısı|Verevlik|skewAngle)\s*[:=]?\s*([^\n\r<•]+)/i);
+          const mTrack = description.match(/(?:Kestiği Hat|intersectedTrackCount)\s*[:=]?\s*([^\n\r<•]+)/i);
+          const mSight = description.match(/(?:Min\.? Görüş|Görüş Mesafesi|minSightDistance)\s*[:=]?\s*([^\n\r<•]+)/i);
+          const mGrad = description.match(/(?:Eğim|railwayGradient)\s*[:=]?\s*([^\n\r<•]+)/i);
+          const mCurve = description.match(/(?:Kurp|curveInfo)\s*[:=]?\s*([^\n\r<•]+)/i);
+
+          if (mType || mSurf || mVehicle || mTrain || mClear || mSkew || mTrack || mSight || mGrad || mCurve) {
+            parsedCrossing = {
+              crossingType: mType ? mType[1].trim() : undefined,
+              surfaceType: mSurf ? mSurf[1].trim() : undefined,
+              dailyVehicleCount: mVehicle ? mVehicle[1].trim() : undefined,
+              dailyTrainCount: mTrain ? mTrain[1].trim() : undefined,
+              clearanceWidth: mClear ? mClear[1].trim() : undefined,
+              skewAngle: mSkew ? mSkew[1].trim() : undefined,
+              intersectedTrackCount: mTrack ? mTrack[1].trim() : undefined,
+              minSightDistance: mSight ? mSight[1].trim() : undefined,
+              railwayGradient: mGrad ? mGrad[1].trim() : undefined,
+              curveInfo: mCurve ? mCurve[1].trim() : undefined,
+            };
+          }
+        }
 
         results.push({
           id: `kml-${Date.now()}-${i}`,
@@ -68,10 +99,11 @@ export function parseKML(kmlText: string, defaultLine: string = 'Kayıtlı Demir
           kmValue: kmVal,
           lineName: defaultLine,
           locationDesc: description.slice(0, 80),
-          category: guessCategory(fullText),
+          category,
           lat,
           lng,
           description,
+          levelCrossing: parsedCrossing,
           notes: [],
           photos: [],
           createdAt: new Date().toISOString(),
@@ -112,10 +144,13 @@ export function parseGeoJSON(jsonText: string, defaultLine: string = 'Kayıtlı 
             lat: Number(lat),
             lng: Number(lng),
             description,
-            notes: [],
-            photos: [],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
+            textStyle: props.textStyle || null,
+            titleTextStyle: props.titleTextStyle || null,
+            levelCrossing: props.levelCrossing || props.level_crossing || undefined,
+            notes: Array.isArray(props.notes) ? props.notes : [],
+            photos: Array.isArray(props.photos) ? props.photos : [],
+            createdAt: props.createdAt || new Date().toISOString(),
+            updatedAt: props.updatedAt || new Date().toISOString(),
           });
         }
       }
@@ -129,9 +164,193 @@ export function parseGeoJSON(jsonText: string, defaultLine: string = 'Kayıtlı 
 }
 
 /**
+ * Parses generic key-value row (from Excel sheet or CSV) into Partial<RailwayPoint>
+ */
+export function parseRowObject(row: Record<string, any>, index: number, defaultLine: string = 'Kayıtlı Demiryolu Hattı'): Partial<RailwayPoint> | null {
+  const normKeys: Record<string, any> = {};
+  for (const [k, v] of Object.entries(row)) {
+    if (v !== undefined && v !== null && String(v).trim() !== '') {
+      const cleanKey = k.trim().toLowerCase().replace(/[\s_.-]/g, '');
+      normKeys[cleanKey] = v;
+    }
+  }
+
+  // 1. Coordinates
+  const latVal = normKeys['lat'] ?? normKeys['enlem'] ?? normKeys['latitude'] ?? normKeys['y'] ?? normKeys['kordinatlat'] ?? normKeys['noktaenlem'];
+  const lngVal = normKeys['lng'] ?? normKeys['boylam'] ?? normKeys['longitude'] ?? normKeys['lon'] ?? normKeys['x'] ?? normKeys['kordinatlng'] ?? normKeys['noktaboylam'];
+
+  const lat = parseFloat(String(latVal).replace(',', '.'));
+  const lng = parseFloat(String(lngVal).replace(',', '.'));
+
+  // 2. Title & KM
+  const rawTitle = normKeys['title'] ?? normKeys['name'] ?? normKeys['baslik'] ?? normKeys['başlık'] ?? normKeys['ad'] ?? normKeys['gecitadi'] ?? normKeys['geçitadı'] ?? normKeys['noktaadı'] ?? normKeys['noktaadi'] ?? '';
+  const rawKm = normKeys['km'] ?? normKeys['kmvalue'] ?? normKeys['kilometre'] ?? normKeys['zincir'] ?? '';
+
+  const title = String(rawTitle).trim() || (rawKm ? `KM ${rawKm}` : `KM Noktası ${index + 1}`);
+  const kmValue = String(rawKm).trim() || extractKmValue(title);
+
+  const lineName = String(normKeys['line'] ?? normKeys['linename'] ?? normKeys['hat'] ?? normKeys['hatadi'] ?? normKeys['hatadı'] ?? defaultLine).trim();
+  const locationDesc = String(normKeys['location'] ?? normKeys['locationdesc'] ?? normKeys['mevki'] ?? normKeys['yer'] ?? normKeys['konum'] ?? '').trim();
+  const description = String(normKeys['description'] ?? normKeys['desc'] ?? normKeys['aciklama'] ?? normKeys['açıklama'] ?? normKeys['not'] ?? normKeys['notlar'] ?? '').trim();
+
+  // 3. Category detection
+  const rawCat = String(normKeys['category'] ?? normKeys['kategori'] ?? normKeys['tur'] ?? normKeys['tür'] ?? '').trim().toLowerCase();
+  let category: RailwayPointCategory = 'km_marker';
+  if (rawCat.includes('gecit') || rawCat.includes('geçit') || rawCat.includes('crossing') || rawCat.includes('hemzemin')) {
+    category = 'crossing';
+  } else if (rawCat.includes('makas') || rawCat.includes('switch')) {
+    category = 'switch';
+  } else if (rawCat.includes('kopru') || rawCat.includes('köprü') || rawCat.includes('viyaduk') || rawCat.includes('viyadük') || rawCat.includes('bridge')) {
+    category = 'bridge';
+  } else if (rawCat.includes('menfez') || rawCat.includes('culvert')) {
+    category = 'culvert';
+  } else if (rawCat.includes('istasyon') || rawCat.includes('gar') || rawCat.includes('durak') || rawCat.includes('station')) {
+    category = 'station';
+  } else if (rawCat.includes('sinyal') || rawCat.includes('signal')) {
+    category = 'signal';
+  } else {
+    category = guessCategory(`${title} ${description} ${locationDesc}`);
+  }
+
+  // 4. Level crossing fields (Hemzemin Geçit Özellikleri)
+  let levelCrossing: any = undefined;
+  const crossingType = normKeys['crossingtype'] ?? normKeys['gecittipi'] ?? normKeys['geçittipi'] ?? normKeys['tip'] ?? normKeys['bariyertipi'] ?? normKeys['bariyer'];
+  const surfaceType = normKeys['surfacetype'] ?? normKeys['kaplamacinsi'] ?? normKeys['kaplama'] ?? normKeys['kaplamatipi'] ?? normKeys['zemin'];
+  const dailyVehicle = normKeys['dailyvehiclecount'] ?? normKeys['tasitsayisi'] ?? normKeys['taşıtsayısı'] ?? normKeys['24saattasit'] ?? normKeys['24saattaşıt'] ?? normKeys['aracsayisi'] ?? normKeys['araçsayısı'];
+  const dailyTrain = normKeys['dailytraincount'] ?? normKeys['trensayisi'] ?? normKeys['trensayısı'] ?? normKeys['24saattren'] ?? normKeys['gunluktren'] ?? normKeys['günlüktren'];
+  const clearance = normKeys['clearancewidth'] ?? normKeys['gecitacikligi'] ?? normKeys['geçitaçıklığı'] ?? normKeys['aciklik'] ?? normKeys['açıklık'] ?? normKeys['yolgenisligi'] ?? normKeys['yolgenişliği'];
+  const skewAngle = normKeys['skewangle'] ?? normKeys['verevlik'] ?? normKeys['verevlikacisi'] ?? normKeys['verevlikaçısı'] ?? normKeys['aci'] ?? normKeys['açı'];
+  const intersectedTrack = normKeys['intersectedtrackcount'] ?? normKeys['kestigihatadedi'] ?? normKeys['kestiğihatadedi'] ?? normKeys['hatsayisi'] ?? normKeys['hatsayısı'] ?? normKeys['kestigihat'] ?? normKeys['kestiğihat'];
+  const minSight = normKeys['minsightdistance'] ?? normKeys['gorusmesafesi'] ?? normKeys['görüşmesafesi'] ?? normKeys['mingorus'] ?? normKeys['mingörüş'];
+  const railwayGradient = normKeys['railwaygradient'] ?? normKeys['egim'] ?? normKeys['eğim'] ?? normKeys['demiryoluegimi'] ?? normKeys['demiryolueğimi'] ?? normKeys['meyil'];
+  const curveInfo = normKeys['curveinfo'] ?? normKeys['kurp'] ?? normKeys['kurpbilgisi'] ?? normKeys['kurpbilgileri'] ?? normKeys['yaricap'] ?? normKeys['yarıçap'];
+
+  if (category === 'crossing' || crossingType || surfaceType || dailyVehicle || dailyTrain || clearance || skewAngle || intersectedTrack || minSight || railwayGradient || curveInfo) {
+    category = 'crossing';
+    levelCrossing = {
+      crossingType: crossingType ? String(crossingType).trim() : undefined,
+      surfaceType: surfaceType ? String(surfaceType).trim() : undefined,
+      dailyVehicleCount: dailyVehicle ? String(dailyVehicle).trim() : undefined,
+      dailyTrainCount: dailyTrain ? String(dailyTrain).trim() : undefined,
+      clearanceWidth: clearance ? String(clearance).trim() : undefined,
+      skewAngle: skewAngle ? String(skewAngle).trim() : undefined,
+      intersectedTrackCount: intersectedTrack ? String(intersectedTrackCount).trim() : undefined,
+      minSightDistance: minSight ? String(minSight).trim() : undefined,
+      railwayGradient: railwayGradient ? String(railwayGradient).trim() : undefined,
+      curveInfo: curveInfo ? String(curveInfo).trim() : undefined,
+    };
+  }
+
+  return {
+    id: `imp-${Date.now()}-${index}`,
+    title,
+    kmValue,
+    lineName,
+    locationDesc,
+    category,
+    lat: !isNaN(lat) ? lat : 0,
+    lng: !isNaN(lng) ? lng : 0,
+    description,
+    levelCrossing,
+    notes: [],
+    photos: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Parses binary Excel file (ArrayBuffer / Uint8Array) into Partial<RailwayPoint>[]
+ */
+export function parseExcelBuffer(buffer: ArrayBuffer | Uint8Array, defaultLine: string = 'Kayıtlı Demiryolu Hattı'): Partial<RailwayPoint>[] {
+  try {
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const allResults: Partial<RailwayPoint>[] = [];
+
+    // Scan all sheets in workbook
+    for (const sheetName of workbook.SheetNames) {
+      const worksheet = workbook.Sheets[sheetName];
+      if (!worksheet) continue;
+
+      // Try reading as array of arrays to find header row (in case row 1 is a merged title like "TCDD HEMZEMİN GEÇİT LİSTESİ")
+      const rawData = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: '' });
+      if (!Array.isArray(rawData) || rawData.length === 0) continue;
+
+      // Find which row has headers
+      let headerRowIndex = 0;
+      for (let r = 0; r < Math.min(rawData.length, 10); r++) {
+        const row = rawData[r];
+        if (!Array.isArray(row)) continue;
+        const joined = row.map((c) => String(c || '').toLowerCase().replace(/[\s_.-]/g, '')).join(' ');
+        if (
+          joined.includes('km') ||
+          joined.includes('gecit') ||
+          joined.includes('geçit') ||
+          joined.includes('enlem') ||
+          joined.includes('lat') ||
+          joined.includes('ad') ||
+          joined.includes('baslik') ||
+          joined.includes('başlık') ||
+          joined.includes('kaplama') ||
+          joined.includes('bariyer')
+        ) {
+          headerRowIndex = r;
+          break;
+        }
+      }
+
+      // Convert from detected header row
+      const headers = (rawData[headerRowIndex] || []).map((h: any) => String(h || '').trim());
+      for (let r = headerRowIndex + 1; r < rawData.length; r++) {
+        const rowArr = rawData[r];
+        if (!Array.isArray(rowArr) || rowArr.every((c) => c === '' || c === undefined || c === null)) continue;
+
+        const rowObj: Record<string, any> = {};
+        headers.forEach((h, colIdx) => {
+          if (h) {
+            rowObj[h] = rowArr[colIdx] ?? '';
+          } else {
+            rowObj[`col_${colIdx}`] = rowArr[colIdx] ?? '';
+          }
+        });
+
+        const parsed = parseRowObject(rowObj, allResults.length, defaultLine);
+        if (parsed && (parsed.kmValue || parsed.title || parsed.lat !== 0 || parsed.lng !== 0)) {
+          allResults.push(parsed);
+        }
+      }
+    }
+
+    return allResults;
+  } catch (err) {
+    console.error('Excel parse error:', err);
+    return [];
+  }
+}
+
+/**
  * Parses CSV text with headers (lat, lng, name/km, etc.)
  */
 export function parseCSV(csvText: string, defaultLine: string = 'Kayıtlı Demiryolu Hattı'): Partial<RailwayPoint>[] {
+  try {
+    const workbook = XLSX.read(csvText, { type: 'string' });
+    const firstSheetName = workbook.SheetNames[0];
+    if (firstSheetName) {
+      const worksheet = workbook.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '' });
+      if (Array.isArray(rows) && rows.length > 0) {
+        const results: Partial<RailwayPoint>[] = [];
+        rows.forEach((row, idx) => {
+          const parsed = parseRowObject(row, idx, defaultLine);
+          if (parsed && (parsed.lat !== 0 || parsed.lng !== 0 || parsed.title)) {
+            results.push(parsed);
+          }
+        });
+        if (results.length > 0) return results;
+      }
+    }
+  } catch {}
+
   const lines = csvText.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
 
@@ -201,6 +420,7 @@ export function parseNativeJSON(jsonText: string): Partial<RailwayPoint>[] {
         description: p.description || '',
         textStyle: p.textStyle || null,
         titleTextStyle: p.titleTextStyle || null,
+        levelCrossing: p.levelCrossing || p.level_crossing || undefined,
         notes: Array.isArray(p.notes) ? p.notes : [],
         photos: Array.isArray(p.photos) ? p.photos : [],
         createdAt: p.createdAt || new Date().toISOString(),
@@ -369,4 +589,42 @@ export function exportSinglePointKML(point: RailwayPoint) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+/**
+ * Exports railway points to Excel (.xlsx) file download
+ */
+export function exportToExcel(points: RailwayPoint[]) {
+  const rows = points.map((p) => {
+    const lc = p.levelCrossing || {};
+    return {
+      'Başlık': p.title,
+      'KM': p.kmValue,
+      'Hat Adı': p.lineName,
+      'Mevki': p.locationDesc || '',
+      'Kategori': p.category,
+      'Enlem (Lat)': p.lat,
+      'Boylam (Lng)': p.lng,
+      'Açıklama': p.description || '',
+      'Geçit Tipi': lc.crossingType || '',
+      'Kaplama Cinsi': lc.surfaceType || '',
+      '24 Saat Taşıt Sayısı': lc.dailyVehicleCount ?? '',
+      '24 Saat Tren Sayısı': lc.dailyTrainCount ?? '',
+      'Geçit Açıklığı (Genişlik)': lc.clearanceWidth || '',
+      'Verevlik Açısı': lc.skewAngle || '',
+      'Kestiği Hat Adedi': lc.intersectedTrackCount ?? '',
+      'Min Görüş Mesafesi': lc.minSightDistance || '',
+      'Demiryolu Eğimi (Binde)': lc.railwayGradient || '',
+      'Kurp Bilgileri': lc.curveInfo || '',
+      'Not Sayısı': p.notes?.length || 0,
+      'Fotoğraf Sayısı': p.photos?.length || 0,
+    };
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Demiryolu Noktaları');
+
+  XLSX.writeFile(workbook, `demiryolu_noktalar_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
 

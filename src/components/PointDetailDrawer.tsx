@@ -3,6 +3,8 @@ import { RailwayPoint, RailwayPointCategory, PointNote, PointPhoto, TextStyleCon
 import { CategoryColorConfig, DEFAULT_CATEGORY_COLORS, formatKmDisplay } from '../utils/categoryColors.ts';
 import { getTextStyleInline, DEFAULT_TEXT_STYLE } from '../utils/textStyleHelper.ts';
 import { compressImage } from '../utils/imageCompressor.ts';
+import { StampedPhotoView } from './StampedPhotoView.tsx';
+import { getWatermarkOptionsForPoint } from '../utils/watermarkHelper.ts';
 import { TextFormattingToolbar } from './TextFormattingToolbar.tsx';
 import { DeleteConfirmModal } from './DeleteConfirmModal.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
@@ -34,6 +36,7 @@ import {
   Eye,
   CornerUpRight,
   Percent,
+  Wrench,
 } from 'lucide-react';
 
 interface PointDetailDrawerProps {
@@ -48,6 +51,7 @@ interface PointDetailDrawerProps {
   categoryColors?: Record<RailwayPointCategory, CategoryColorConfig>;
   onStartMeasure?: (point: RailwayPoint) => void;
   onPanToPoint?: (point: RailwayPoint) => void;
+  onOpenWorkLogs?: (point: RailwayPoint) => void;
 }
 
 const CATEGORY_NAMES: Record<string, string> = {
@@ -115,6 +119,7 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
   categoryColors = DEFAULT_CATEGORY_COLORS,
   onStartMeasure,
   onPanToPoint,
+  onOpenWorkLogs,
 }) => {
   const { user, isAdmin, canAddNote, canAddPhoto, canDelete } = useAuth();
   // On mobile screens, start in compact mode so map remains visible and screen isn't crowded!
@@ -146,12 +151,16 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
   const [isUploadingPhoto, setIsUploadingPhoto] = useState<boolean>(false);
   const [previewPhoto, setPreviewPhoto] = useState<PointPhoto | null>(null);
   const [photoCaption, setPhotoCaption] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'info' | 'crossing' | 'notes' | 'photos'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'crossing' | 'culvert' | 'notes' | 'photos'>('info');
 
-  // If point is crossing, ensure default tab can easily access crossing specs
+  // If point is crossing or culvert, automatically default active tab so the user immediately sees all specifications
   useEffect(() => {
-    if (point?.category === 'crossing' && point.levelCrossing && Object.values(point.levelCrossing).some(Boolean)) {
-      // Keep user choice or default to info
+    if (point?.category === 'crossing') {
+      setActiveTab('crossing');
+    } else if (point?.category === 'culvert') {
+      setActiveTab('culvert');
+    } else {
+      setActiveTab('info');
     }
   }, [point?.id, point?.category]);
 
@@ -262,7 +271,35 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
 
     setIsUploadingPhoto(true);
     try {
-      const compressedDataUrl = await compressImage(file, 1280, 1280, 0.82);
+      // Build specific extra details for crossings and culverts
+      let extraDetails = '';
+      if (point.category === 'crossing' && point.levelCrossing) {
+        const parts = [
+          point.levelCrossing.crossingType ? `Tip: ${point.levelCrossing.crossingType}` : '',
+          point.levelCrossing.surfaceType ? `Kaplama: ${point.levelCrossing.surfaceType}` : '',
+          point.levelCrossing.nereleriBagladigi ? `Güzergah: ${point.levelCrossing.nereleriBagladigi}` : '',
+        ].filter(Boolean);
+        extraDetails = parts.join(' | ');
+      } else if (point.category === 'culvert' && point.culvert) {
+        const parts = [
+          point.culvert.cinsi ? `Cins: ${point.culvert.cinsi}` : '',
+          point.culvert.aciklikSerbest ? `Açıklık: ${point.culvert.aciklikSerbest}m` : '',
+          point.culvert.debuseYuksekligi ? `Debuşe: ${point.culvert.debuseYuksekligi}m` : '',
+          point.culvert.yapimYili ? `Yıl: ${point.culvert.yapimYili}` : '',
+        ].filter(Boolean);
+        extraDetails = parts.join(' | ');
+      }
+
+      const watermarkData = {
+        title: point.title,
+        kmValue: point.kmValue || point.title,
+        lineName: point.lineName,
+        category: point.category,
+        organization: 'TCDD 712 YOL BAKIM ŞEFLİĞİ',
+        coords: { lat: point.lat, lng: point.lng },
+        extraDetails: extraDetails || undefined,
+      };
+      const compressedDataUrl = await compressImage(file, 1280, 1280, 0.82, watermarkData);
       if (compressedDataUrl) {
         await onAddPhoto(
           point.id,
@@ -293,15 +330,23 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
           md:bottom-4 md:right-4 md:left-auto md:w-[480px] lg:w-[530px] md:max-h-[calc(100vh-100px)] md:rounded-2xl md:border md:border-slate-200/90
         `}
       >
-        {/* Drawer Drag/Header Handle */}
-        <div className="flex items-center justify-between px-4 sm:px-5 py-2.5 bg-slate-50/90 border-b border-slate-200/80 md:rounded-t-2xl">
-          <div className="flex items-center gap-2.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
-              Demiryolu Nokta Detayı
+        {/* Drawer Drag/Header Handle - High-Tech TCDD Command Bar */}
+        <div className="flex items-center justify-between px-4 sm:px-5 py-2.5 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white border-b border-slate-800 md:rounded-t-2xl shadow-sm">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
             </span>
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-sky-400 leading-none">
+                TCDD 712 ŞEFLİĞİ • SAHA BİLGİ SİSTEMİ
+              </span>
+              <span className="text-xs font-bold text-slate-200 truncate">
+                Demiryolu Nokta Detayı
+              </span>
+            </div>
             <span
-              className="text-xs font-mono px-2 py-0.5 rounded-md font-bold notranslate shadow-xs"
+              className="text-xs font-mono px-2.5 py-0.5 rounded-lg font-black notranslate shadow-sm shrink-0 border border-white/20"
               translate="no"
               style={{ backgroundColor: conf.bg, color: conf.text || '#ffffff' }}
             >
@@ -309,11 +354,11 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               id="drawer-toggle-expand-btn"
               onClick={() => setIsExpanded(!isExpanded)}
-              className="p-1.5 text-slate-500 hover:text-slate-800 rounded-lg hover:bg-slate-200/60 transition-colors cursor-pointer"
+              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
               title={isExpanded ? 'Detayları Küçült' : 'Detayları Genişlet'}
             >
               {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
@@ -321,7 +366,7 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
             <button
               id="drawer-close-btn"
               onClick={onClose}
-              className="p-1.5 text-slate-500 hover:text-slate-800 rounded-lg hover:bg-slate-200/60 transition-colors cursor-pointer"
+              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
               title="Kapat"
             >
               <X className="w-4 h-4" />
@@ -330,45 +375,48 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
         </div>
 
         {/* Top Summary & Actions - Nested Boxes Architecture */}
-        <div className="px-3 sm:px-4 py-2.5 border-b border-slate-100 space-y-2 bg-white">
+        <div className="px-3 sm:px-4 py-2.5 border-b border-slate-200/90 space-y-2 bg-gradient-to-b from-slate-50 to-white">
           {/* İç Kutu 1: Nokta Başlığı ve Kimlik Bilgileri */}
-          <div className="bg-slate-50/90 p-2.5 rounded-xl border border-slate-200/70 flex flex-col gap-1">
+          <div className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col gap-1.5">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2 flex-wrap min-w-0">
                 <h2
-                  className="text-base sm:text-lg font-bold text-slate-900 leading-snug truncate notranslate"
+                  className="text-base sm:text-lg font-black text-slate-900 leading-snug truncate notranslate"
                   translate="no"
                   style={point.titleTextStyle ? getTextStyleInline(point.titleTextStyle) : undefined}
                 >
                   {point.title}
                 </h2>
                 <span
-                  className="text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs flex-shrink-0 notranslate"
+                  className="text-[11px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-xs flex-shrink-0 notranslate tracking-wide"
                   translate="no"
                   style={{ backgroundColor: conf.bg, color: conf.text || '#ffffff' }}
                 >
                   {conf.svgIcon && (
                     <span
-                      className="w-3 h-3 flex items-center justify-center"
+                      className="w-3.5 h-3.5 flex items-center justify-center"
                       dangerouslySetInnerHTML={{ __html: conf.svgIcon }}
                     />
                   )}
                   <span>{conf.label}</span>
                 </span>
                 {cleanKm && (
-                  <span className="text-[11px] font-mono font-bold bg-blue-100 text-blue-900 px-2 py-0.5 rounded-md border border-blue-200 flex-shrink-0">
+                  <span className="text-[11px] font-mono font-black bg-blue-50 text-blue-900 px-2.5 py-0.5 rounded-lg border border-blue-200/80 flex-shrink-0 shadow-2xs">
                     KM {cleanKm}
                   </span>
                 )}
               </div>
             </div>
 
-            <div className="text-[11px] text-slate-500 flex items-center gap-2 flex-wrap pt-0.5">
-              <span className="font-semibold text-slate-700">{point.lineName}</span>
-              {point.locationDesc && <span>• {point.locationDesc}</span>}
+            <div className="text-[11px] text-slate-500 flex items-center gap-2 flex-wrap pt-0.5 border-t border-slate-100">
+              <span className="font-bold text-slate-800 flex items-center gap-1">
+                <Train className="w-3 h-3 text-sky-600" />
+                {point.lineName}
+              </span>
+              {point.locationDesc && <span className="text-slate-600">• {point.locationDesc}</span>}
               {hasValidCoords && (
-                <span className="font-mono text-slate-600 bg-slate-200/60 px-1.5 py-0.2 rounded text-[10px]">
-                  {latNum.toFixed(5)}, {lngNum.toFixed(5)}
+                <span className="font-mono text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                  📍 {latNum.toFixed(5)}, {lngNum.toFixed(5)}
                 </span>
               )}
             </div>
@@ -456,6 +504,24 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
                 </button>
               )}
 
+              {/* Yapılan İşler & Bakım Defteri Butonu */}
+              {onOpenWorkLogs && (
+                <button
+                  id="drawer-open-worklogs-btn"
+                  onClick={() => onOpenWorkLogs(point)}
+                  title="Saha İşleri & Bakım Defterini Aç"
+                  className="flex items-center gap-1 px-2 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs"
+                >
+                  <Wrench className="w-3.5 h-3.5 text-amber-700" />
+                  <span className="hidden sm:inline">İşler</span>
+                  {point.workLogs && point.workLogs.length > 0 && (
+                    <span className="bg-amber-500 text-slate-950 px-1 py-0.2 rounded-full text-[10px] font-black">
+                      {point.workLogs.length}
+                    </span>
+                  )}
+                </button>
+              )}
+
               {/* Düzenle Butonu (Yalnızca Yönetici) */}
               {isAdmin && (
                 <button
@@ -510,19 +576,19 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
         {/* Expandable Content Area */}
         {isExpanded && (
           <div className="overflow-y-auto px-3 sm:px-4 py-3 flex-1 space-y-3">
-            {/* Tabs for Organization - Nested Tab Bar */}
-            <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 border border-slate-200/80">
+            {/* Tabs for Organization - Modern Segmented Control */}
+            <div className="bg-slate-100/90 p-1.5 rounded-2xl flex items-center gap-1 border border-slate-200 shadow-inner">
               <button
                 id="tab-info-btn"
                 onClick={() => setActiveTab('info')}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   activeTab === 'info'
-                    ? 'bg-slate-900 text-white shadow-xs'
+                    ? 'bg-slate-900 text-white shadow-sm ring-1 ring-slate-800'
                     : 'text-slate-600 hover:bg-white hover:text-slate-900'
                 }`}
               >
-                <Train className="w-3.5 h-3.5" />
-                <span>Açıklama &amp; Bilgiler</span>
+                <Train className="w-3.5 h-3.5 text-sky-400" />
+                <span>Bilgiler</span>
               </button>
 
               {/* Hemzemin Geçitler için Özel Sekme */}
@@ -530,16 +596,35 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
                 <button
                   id="tab-crossing-btn"
                   onClick={() => setActiveTab('crossing')}
-                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
                     activeTab === 'crossing'
-                      ? 'bg-amber-500 text-slate-950 shadow-xs ring-2 ring-amber-400/40'
-                      : 'text-amber-800 hover:bg-amber-100/70 hover:text-amber-950'
+                      ? 'bg-amber-500 text-slate-950 shadow-md ring-2 ring-amber-400/50'
+                      : 'text-amber-800 hover:bg-amber-100/80 hover:text-amber-950'
                   }`}
                 >
-                  <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Geçit Özellikleri</span>
+                  <ShieldAlert className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Geçit Föyü</span>
                   {point.levelCrossing && Object.values(point.levelCrossing).some(Boolean) && (
-                    <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white"></span>
+                  )}
+                </button>
+              )}
+
+              {/* Menfezler için Özel Sekme */}
+              {point.category === 'culvert' && (
+                <button
+                  id="tab-culvert-btn"
+                  onClick={() => setActiveTab('culvert')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                    activeTab === 'culvert'
+                      ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-400/50'
+                      : 'text-indigo-800 hover:bg-indigo-100/80 hover:text-indigo-950'
+                  }`}
+                >
+                  <Sliders className="w-3.5 h-3.5 text-indigo-300" />
+                  <span>Menfez Föyü</span>
+                  {point.culvert && Object.values(point.culvert).some(Boolean) && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-white"></span>
                   )}
                 </button>
               )}
@@ -547,27 +632,33 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
               <button
                 id="tab-notes-btn"
                 onClick={() => setActiveTab('notes')}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                className={`flex-1 flex items-center justify-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   activeTab === 'notes'
-                    ? 'bg-slate-900 text-white shadow-xs'
+                    ? 'bg-slate-900 text-white shadow-sm'
                     : 'text-slate-600 hover:bg-white hover:text-slate-900'
                 }`}
               >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>Notlar ({notesList.length})</span>
+                <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
+                <span>Notlar</span>
+                <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-800 ml-0.5">
+                  {notesList.length}
+                </span>
               </button>
 
               <button
                 id="tab-photos-btn"
                 onClick={() => setActiveTab('photos')}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                className={`flex-1 flex items-center justify-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   activeTab === 'photos'
-                    ? 'bg-slate-900 text-white shadow-xs'
+                    ? 'bg-slate-900 text-white shadow-sm ring-1 ring-slate-800'
                     : 'text-slate-600 hover:bg-white hover:text-slate-900'
                 }`}
               >
-                <ImageIcon className="w-3.5 h-3.5" />
-                <span>Fotoğraflar ({photosList.length})</span>
+                <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
+                <span>Fotoğraflar</span>
+                <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-amber-200 text-amber-950 ml-0.5">
+                  {photosList.length}
+                </span>
               </button>
             </div>
 
@@ -866,6 +957,35 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
                       {point.levelCrossing?.curveInfo || <span className="text-slate-400 font-normal">Belirtilmemiş</span>}
                     </div>
                   </div>
+
+                  {/* 11. Karayolunun Ait Olduğu Kuruluş */}
+                  {point.levelCrossing?.roadBelonging && (
+                    <div className="bg-slate-50 hover:bg-amber-50/40 transition-colors p-3 rounded-xl border border-slate-200/80 space-y-1">
+                      <div className="flex items-center gap-1.5 text-slate-500 font-semibold text-[11px]">
+                        <span>🏛️</span>
+                        <span>Karayolunun Ait Olduğu Kuruluş</span>
+                      </div>
+                      <div className="text-xs font-bold text-slate-900">
+                        {point.levelCrossing.roadBelonging}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 12. Şube Şefliği & Güzergah */}
+                  {(point.levelCrossing?.subeSefligi || point.levelCrossing?.nereleriBagladigi) && (
+                    <div className="bg-slate-50 hover:bg-amber-50/40 transition-colors p-3 rounded-xl border border-slate-200/80 space-y-1">
+                      <div className="flex items-center gap-1.5 text-slate-500 font-semibold text-[11px]">
+                        <span>📍</span>
+                        <span>Şube &amp; Güzergah Bağlantısı</span>
+                      </div>
+                      <div className="text-xs font-bold text-slate-900">
+                        {[
+                          point.levelCrossing.subeSefligi ? `${point.levelCrossing.subeSefligi}. Şube Şefliği` : '',
+                          point.levelCrossing.nereleriBagladigi || ''
+                        ].filter(Boolean).join(' - ')}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Bilgilendirme / Düzenleme Butonu (Eğer henüz veri girilmemişse) */}
@@ -879,6 +999,156 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
                         type="button"
                         onClick={() => onEdit(point)}
                         className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-lg transition-all inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                        <span>Şimdi Parametreleri Gir</span>
+                      </button>
+                    ) : (
+                      <p className="text-[11px] text-slate-500">Parametreleri yalnızca yöneticiler güncelleyebilir.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Menfezler için Özel Sekme İçeriği */}
+            {activeTab === 'culvert' && (
+              <div className="space-y-3 animate-in fade-in duration-150">
+                {/* Menfez Başlık Kartı */}
+                <div className="bg-gradient-to-r from-indigo-500/15 via-indigo-500/10 to-transparent p-3.5 rounded-2xl border border-indigo-200 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-xs">
+                      <Sliders className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900">
+                        {point.culvert?.bakimSefligi || '712 YOL BAKIM ŞEFLİĞİ'} MENFEZ BİLGİLERİ
+                      </h4>
+                      <p className="text-[11px] text-slate-600">Açıklık, debuşe yüksekliği, yapım yılı ve cinsi</p>
+                    </div>
+                  </div>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => onEdit(point)}
+                      className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1 transition-all active:scale-95 cursor-pointer shrink-0"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                      <span>Düzenle</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Grid of Menfez Fields */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  {/* Cinsi */}
+                  <div className="bg-slate-50 hover:bg-indigo-50/40 transition-colors p-3 rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-500 font-semibold text-[11px]">
+                      <span>🧱</span>
+                      <span>Menfez Cinsi</span>
+                    </div>
+                    <div className="text-xs font-bold text-indigo-950">
+                      {point.culvert?.cinsi || <span className="text-slate-400 font-normal">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+
+                  {/* Hattı */}
+                  <div className="bg-slate-50 hover:bg-indigo-50/40 transition-colors p-3 rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-500 font-semibold text-[11px]">
+                      <Train className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Demiryolu Hattı</span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-900">
+                      {point.culvert?.hatti || point.lineName || <span className="text-slate-400 font-normal">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+
+                  {/* Mihver Klm.si */}
+                  <div className="bg-blue-50/70 p-3 rounded-xl border border-blue-200/90 space-y-1">
+                    <div className="flex items-center gap-1.5 text-blue-700 font-semibold text-[11px]">
+                      <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Mihver Klm.si</span>
+                    </div>
+                    <div className="text-xs font-extrabold text-blue-950 font-mono">
+                      {point.culvert?.mihverKlm || point.kmValue || <span className="text-slate-400 font-normal">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+
+                  {/* Açıklığı - Serbest (m) */}
+                  <div className="bg-slate-50 hover:bg-indigo-50/40 transition-colors p-3 rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-500 font-semibold text-[11px]">
+                      <span>📏</span>
+                      <span>Açıklığı (Serbest)</span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-900 font-mono">
+                      {point.culvert?.aciklikSerbest !== undefined && String(point.culvert.aciklikSerbest) !== ''
+                        ? `${point.culvert.aciklikSerbest} m`
+                        : <span className="text-slate-400 font-normal">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+
+                  {/* Açıklığı - Mesnet (Adet/Göz) */}
+                  <div className="bg-slate-50 hover:bg-indigo-50/40 transition-colors p-3 rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-500 font-semibold text-[11px]">
+                      <span>📐</span>
+                      <span>Açıklığı (Mesnet Adedi)</span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-900 font-mono">
+                      {point.culvert?.aciklikMesnet !== undefined && String(point.culvert.aciklikMesnet) !== ''
+                        ? `${point.culvert.aciklikMesnet} Adet`
+                        : <span className="text-slate-400 font-normal">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+
+                  {/* Debuşe Yüksekliği (m) */}
+                  <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200/90 space-y-1">
+                    <div className="flex items-center gap-1.5 text-emerald-700 font-semibold text-[11px]">
+                      <CornerUpRight className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Debuşe Yüksekliği</span>
+                    </div>
+                    <div className="text-xs font-extrabold text-emerald-950 font-mono">
+                      {point.culvert?.debuseYuksekligi !== undefined && String(point.culvert.debuseYuksekligi) !== ''
+                        ? `${point.culvert.debuseYuksekligi} m`
+                        : <span className="text-slate-400 font-normal">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+
+                  {/* Yapım Yılı */}
+                  <div className="bg-slate-50 hover:bg-indigo-50/40 transition-colors p-3 rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-500 font-semibold text-[11px]">
+                      <span>📅</span>
+                      <span>Yapım Yılı</span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-900 font-mono">
+                      {point.culvert?.yapimYili || <span className="text-slate-400 font-normal">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+
+                  {/* Dingil Basıncı */}
+                  <div className="bg-slate-50 hover:bg-indigo-50/40 transition-colors p-3 rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-500 font-semibold text-[11px]">
+                      <span>⚖️</span>
+                      <span>Dingil Basıncı</span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-900 font-mono">
+                      {point.culvert?.dingilBasinci !== undefined && String(point.culvert.dingilBasinci) !== ''
+                        ? `${point.culvert.dingilBasinci} Ton`
+                        : <span className="text-slate-400 font-normal">Belirtilmemiş</span>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bilgilendirme / Düzenleme Butonu (Eğer henüz veri girilmemişse) */}
+                {(!point.culvert || !Object.values(point.culvert).some(Boolean)) && (
+                  <div className="bg-indigo-50/80 border border-indigo-200 p-3 rounded-xl text-center space-y-2">
+                    <p className="text-xs text-indigo-900">
+                      Bu menfez için henüz teknik tablo parametresi girilmedi.
+                    </p>
+                    {isAdmin ? (
+                      <button
+                        type="button"
+                        onClick={() => onEdit(point)}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-all inline-flex items-center gap-1 cursor-pointer"
                       >
                         <Edit className="w-3.5 h-3.5" />
                         <span>Şimdi Parametreleri Gir</span>
@@ -1045,6 +1315,12 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
                   </div>
                 )}
 
+                {canAddPhoto && (
+                  <div className="text-[11px] text-sky-700 bg-sky-50/80 border border-sky-200 px-3 py-1.5 rounded-lg flex items-center justify-between">
+                    <span>🛡️ <strong>Otomatik TCDD Damgası:</strong> Fotoğraflara Şeflik, Hat, KM, Geçit/Menfez Tipi, Tarih-Saat ve Koordinat silinmez olarak işlenir.</span>
+                  </div>
+                )}
+
                 {/* Photo Grid */}
                 {photosList.length === 0 ? (
                   <div className="text-center py-8 text-slate-400 text-xs border-2 border-dashed border-slate-200 rounded-xl p-4">
@@ -1052,37 +1328,36 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
                     Henüz fotoğraf eklenmemiş. Sahadaki ray, makas, menfez veya tabela fotoğraflarını ekleyebilirsiniz.
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {photosList.map((photo) => (
                       <div
                         key={photo.id}
-                        className="relative group rounded-xl overflow-hidden border border-slate-200 shadow-sm aspect-video bg-slate-100 cursor-pointer"
+                        className="relative group rounded-xl overflow-hidden border border-slate-700/80 shadow-md aspect-video bg-slate-900 cursor-pointer"
                         onClick={() => setPreviewPhoto(photo)}
                       >
-                        <img
-                          src={photo.dataUrl}
+                        <StampedPhotoView
+                          dataUrl={photo.dataUrl}
                           alt={photo.caption || 'KM Fotoğrafı'}
-                          className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          watermark={getWatermarkOptionsForPoint(point, photo.takenAt)}
+                          compact={true}
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-2 flex flex-col justify-between">
-                          {isAdmin ? (
+
+                        {/* Top-right Action Buttons */}
+                        <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 z-10">
+                          {isAdmin && (
                             <button
                               id={`delete-photo-${photo.id}-btn`}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setPhotoToDelete(photo);
                               }}
-                              className="self-end p-1 bg-red-600/80 hover:bg-red-700 text-white rounded-md transition-colors cursor-pointer"
+                              className="p-1.5 bg-red-600/90 hover:bg-red-700 text-white rounded-lg transition-colors cursor-pointer shadow-md"
                               title="Fotoğrafı Sil"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
-                          ) : (
-                            <div />
                           )}
-                          <p className="text-[11px] text-white font-medium truncate">
-                            {photo.caption || 'Fotoğraf'}
-                          </p>
                         </div>
                       </div>
                     ))}
@@ -1094,39 +1369,57 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
         )}
       </div>
 
-      {/* Full Size Photo Lightbox Modal */}
+      {/* Full Size Photo Lightbox Modal with Official TCDD Watermark */}
       {previewPhoto && (
         <div
           id="photo-lightbox-modal"
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200"
           onClick={() => setPreviewPhoto(null)}
         >
           <div
-            className="relative max-w-4xl w-full bg-slate-900 rounded-2xl overflow-hidden border border-slate-700 shadow-2xl"
+            className="relative max-w-5xl w-full bg-slate-900 rounded-3xl overflow-hidden border border-slate-700 shadow-2xl flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-3 border-b border-slate-800 text-white">
-              <span className="text-xs font-semibold text-slate-300">
-                {previewPhoto.caption || 'Fotoğraf Görüntüleyici'}
-              </span>
-              <button
-                id="close-lightbox-btn"
-                onClick={() => setPreviewPhoto(null)}
-                className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+            <div className="flex items-center justify-between p-3.5 bg-slate-950/80 border-b border-slate-800 text-white">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                <span className="text-xs sm:text-sm font-bold text-slate-200 truncate">
+                  {previewPhoto.caption || `${point.title} Resmi Saha Fotoğrafı`}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewPhoto.dataUrl}
+                  download={`TCDD_${point.kmValue || point.title}_${photoCaption || 'foto'}.jpg`}
+                  className="p-1.5 text-slate-300 hover:text-white rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-1 text-xs font-semibold"
+                  title="Fotoğrafı İndir"
+                >
+                  <Download className="w-4 h-4 text-sky-400" />
+                  <span className="hidden sm:inline">İndir</span>
+                </a>
+                <button
+                  id="close-lightbox-btn"
+                  onClick={() => setPreviewPhoto(null)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 cursor-pointer transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
-            <div className="max-h-[70vh] flex items-center justify-center bg-black/50 p-2">
-              <img
-                src={previewPhoto.dataUrl}
-                alt={previewPhoto.caption}
-                className="max-h-[65vh] w-auto max-w-full object-contain rounded-lg"
+
+            <div className="relative min-h-[300px] max-h-[75vh] flex items-center justify-center bg-black overflow-hidden">
+              <StampedPhotoView
+                dataUrl={previewPhoto.dataUrl}
+                alt={previewPhoto.caption || 'KM Fotoğrafı'}
+                className="max-h-[75vh] w-auto max-w-full object-contain mx-auto"
+                watermark={getWatermarkOptionsForPoint(point, previewPhoto.takenAt)}
+                compact={false}
               />
             </div>
-            <div className="p-3 bg-slate-900 text-xs text-slate-400 flex justify-between items-center">
-              <span>{previewPhoto.caption || 'Açıklama belirtilmemiş'}</span>
-              <span>{formatDateTimeSafe(previewPhoto.takenAt)}</span>
+
+            <div className="p-3 bg-slate-950 border-t border-slate-800 text-xs text-slate-400 flex justify-between items-center">
+              <span className="text-slate-300 font-medium">{previewPhoto.caption || 'Resmi TCDD Saha Kaydı'}</span>
+              <span className="font-mono text-slate-400">{formatDateTimeSafe(previewPhoto.takenAt)}</span>
             </div>
           </div>
         </div>

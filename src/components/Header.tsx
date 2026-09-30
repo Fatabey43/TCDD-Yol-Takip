@@ -22,6 +22,7 @@ import {
   ChevronDown,
   LogOut,
   Lock,
+  FileText,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -33,6 +34,7 @@ interface HeaderProps {
   onOpenAddModal: () => void;
   onOpenImportExport: () => void;
   onOpenMobileInstall: () => void;
+  onOpenReports?: () => void;
   onToggleAddMode: () => void;
   onOpenPalette?: () => void;
   isPaletteActive?: boolean;
@@ -71,6 +73,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAddModal,
   onOpenImportExport,
   onOpenMobileInstall,
+  onOpenReports,
   onToggleAddMode,
   onOpenPalette,
   isPaletteActive,
@@ -99,12 +102,12 @@ export const Header: React.FC<HeaderProps> = ({
   );
 
   return (
-    <header className="bg-slate-900 text-white border-b border-slate-800 shadow-md flex-shrink-0 z-20">
+    <header className="bg-slate-950 text-white border-b border-slate-800/90 shadow-lg flex-shrink-0 z-20">
       {/* Top Navbar Row */}
-      <div className="px-3 sm:px-6 py-2 sm:py-2.5 flex items-center justify-between gap-2">
-        {/* Logo & Canlı Senkronizasyon Kutusu (Kutucuk yapısı) */}
-        <div className="bg-slate-800/60 border border-slate-700/60 px-2 sm:px-3 py-1.5 rounded-xl flex items-center gap-2 sm:gap-3 min-w-0 shadow-xs">
-          <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 border border-red-500/50 shadow-md">
+      <div className="px-3 sm:px-6 py-2.5 flex items-center justify-between gap-2">
+        {/* Logo & Canlı Senkronizasyon Kutusu (TCDD Command Center Kutusu) */}
+        <div className="bg-gradient-to-r from-slate-900 via-slate-900/90 to-slate-900 border border-slate-700/80 px-2.5 sm:px-3.5 py-1.5 rounded-2xl flex items-center gap-2.5 sm:gap-3 min-w-0 shadow-md">
+          <div className="w-8 h-8 rounded-xl overflow-hidden flex-shrink-0 border-2 border-red-500/70 shadow-md relative">
             <img
               src="/pwa-192x192.png"
               alt="TCDD Lokomotif"
@@ -112,24 +115,29 @@ export const Header: React.FC<HeaderProps> = ({
             />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5 sm:gap-2">
+            <div className="flex items-center gap-2">
               <div className="flex flex-col">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-red-400 leading-none">
-                  712 Şefliği
+                <span className="text-[9px] font-black uppercase tracking-widest text-red-400 leading-none flex items-center gap-1">
+                  <span>TCDD 712 ŞEFLİĞİ</span>
+                  <span className="text-slate-500">•</span>
+                  <span className="text-sky-400">SAHA MERKEZİ</span>
                 </span>
-                <h1 className="text-xs sm:text-base font-extrabold tracking-tight text-white truncate">
-                  TCDD KM TAKİP
+                <h1 className="text-xs sm:text-base font-black tracking-tight text-white truncate drop-shadow-xs">
+                  KM &amp; SAHA TAKİP
                 </h1>
               </div>
               {/* Live Multi-Device Sync Indicator */}
               <div
                 id="cloud-sync-status-badge"
                 title="Tüm cihazlarınızla (telefon, tablet, bilgisayar) anlık canlı senkronize edilir"
-                className="flex items-center gap-1 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] sm:text-[11px] px-1.5 sm:px-2 py-0.5 rounded-full font-medium flex-shrink-0 ml-1"
+                className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full font-bold flex-shrink-0 ml-1 shadow-2xs"
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span className="hidden md:inline">Canlı • </span>
-                <span>{totalPoints} KM</span>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="hidden md:inline">Canlı Hat: </span>
+                <span className="font-mono font-black">{totalPoints} Nokta</span>
               </div>
             </div>
           </div>
@@ -184,6 +192,20 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="hidden lg:inline">KML / Harita Aktar</span>
               <span className="lg:hidden">KML</span>
             </button>
+
+            {/* TCDD Resmi Raporlar (PDF / Excel) */}
+            {onOpenReports && (
+              <button
+                id="header-open-reports-btn"
+                onClick={onOpenReports}
+                className="flex items-center gap-1.5 bg-sky-950/80 hover:bg-sky-900 border border-sky-600/40 text-sky-200 hover:text-white text-xs font-bold px-2.5 py-1.5 rounded-lg transition-all shadow-xs cursor-pointer"
+                title="TCDD Menfez, Geçit ve Yapılan Saha İşleri Resmi Raporları (PDF / Excel)"
+              >
+                <FileText className="w-3.5 h-3.5 text-sky-400" />
+                <span className="hidden sm:inline">Resmi Raporlar</span>
+                <span className="sm:hidden">Rapor</span>
+              </button>
+            )}
 
             {/* JSON Olarak İndir */}
             {onExportJSON && (

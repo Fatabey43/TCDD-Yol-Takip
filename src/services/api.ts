@@ -251,6 +251,7 @@ function normalizePoint(p: RailwayPoint): RailwayPoint {
     lineName,
     description,
     kmValue: km,
+    levelCrossing: p.levelCrossing || (p as any).level_crossing || undefined,
     notes: Array.isArray(p.notes) ? p.notes : [],
     photos: Array.isArray(p.photos) ? p.photos : [],
   };
@@ -308,6 +309,9 @@ export function getLocalCachedPoints(): RailwayPoint[] {
 
               recoveredMap.set(norm.id, {
                 ...norm,
+                levelCrossing: (norm.levelCrossing && Object.keys(norm.levelCrossing).length > 0)
+                  ? norm.levelCrossing
+                  : (existing.levelCrossing || norm.levelCrossing),
                 photos: Array.from(photoMap.values()),
                 notes: Array.from(noteMap.values()),
               });
@@ -414,6 +418,7 @@ export async function fetchRailwayPoints(): Promise<RailwayPoint[]> {
             if (typeof id === 'string') deletedIds.add(id);
           });
           saveDeletedIds(deletedIds);
+          purgeDeletedAndDefaultPoints();
         }
       } catch {
         // ignore
@@ -528,9 +533,16 @@ export async function fetchRailwayPoints(): Promise<RailwayPoint[]> {
           const serverUpdated = sp.updatedAt || '';
           const basePoint = localUpdated > serverUpdated ? lp : sp;
 
+          const localCrossing = lp.levelCrossing;
+          const serverCrossing = sp.levelCrossing;
+          const finalCrossing = (localCrossing && Object.keys(localCrossing).length > 0)
+            ? localCrossing
+            : (serverCrossing || localCrossing || undefined);
+
           mergedMap.set(sp.id, {
             ...basePoint,
             id: sp.id,
+            levelCrossing: finalCrossing,
             photos: Array.from(photoMap.values()),
             notes: Array.from(noteMap.values()),
           });
@@ -539,9 +551,9 @@ export async function fetchRailwayPoints(): Promise<RailwayPoint[]> {
         }
       });
 
-      // 2. Pending offline created points
+      // 2. Pending offline created points (ONLY items with pending offline sync, not stale cache!)
       pendingUpsertMap.forEach((pendingPt, pendingId) => {
-        if (!mergedMap.has(pendingId)) {
+        if (!mergedMap.has(pendingId) && !deletedIds.has(pendingId)) {
           mergedMap.set(pendingId, pendingPt);
         }
       });
@@ -710,6 +722,12 @@ export async function updateExistingPoint(point: RailwayPoint): Promise<RailwayP
     preservedNotes = existingLocal.notes;
   }
 
+  // Preserve levelCrossing if existing point had it and incoming is undefined
+  let preservedCrossing = point.levelCrossing;
+  if ((!preservedCrossing || Object.keys(preservedCrossing).length === 0) && existingLocal && existingLocal.levelCrossing && Object.keys(existingLocal.levelCrossing).length > 0) {
+    preservedCrossing = existingLocal.levelCrossing;
+  }
+
   const resolvedKm = (point.kmValue && point.kmValue.trim())
     ? point.kmValue.trim()
     : extractKmFromText(point.title);
@@ -717,6 +735,7 @@ export async function updateExistingPoint(point: RailwayPoint): Promise<RailwayP
   const updatedPoint: RailwayPoint = {
     ...point,
     kmValue: resolvedKm,
+    levelCrossing: preservedCrossing,
     photos: preservedPhotos,
     notes: preservedNotes,
     updatedAt: new Date().toISOString(),
@@ -961,13 +980,14 @@ export async function importRailwayPoints(
         description: p.description || '',
         textStyle: p.textStyle || undefined,
         titleTextStyle: p.titleTextStyle || undefined,
+        levelCrossing: p.levelCrossing || (p as any).level_crossing || undefined,
         notes: Array.isArray(p.notes) ? p.notes : [],
         photos: Array.isArray(p.photos) ? p.photos : [],
         createdAt: p.createdAt || new Date().toISOString(),
         updatedAt: p.updatedAt || new Date().toISOString(),
       });
     })
-    .filter((p) => !isNaN(p.lat) && !isNaN(p.lng));
+    .filter((p) => (!isNaN(p.lat) && !isNaN(p.lng)) || Boolean(p.kmValue));
 
   saveDeletedIds(deletedIds);
 
@@ -985,11 +1005,42 @@ export async function importRailwayPoints(
   if (replaceAll) {
     newPoints = sortPointsByKm(normalizedImported);
   } else {
-    const map = new Map<string, RailwayPoint>();
-    currentLocal.forEach((p) => map.set(p.id, p));
+    // Merge into current local list
+    const currentList = [...currentLocal];
     normalizedImported.forEach((p) => {
-      const existing = map.get(p.id);
-      if (existing) {
+      const cleanKm = (p.kmValue || '').trim().toLowerCase();
+      const cleanTitle = (p.title || '').trim().toLowerCase();
+      const pLat = Number(p.lat);
+      const pLng = Number(p.lng);
+
+      // Try to find matching existing point by ID, or by identical coordinates, or by KM + title/crossing match
+      const existingIdx = currentList.findIndex((cp) => {
+        if (cp.id === p.id) return true;
+        const cpKm = (cp.kmValue || '').trim().toLowerCase();
+        const cpTitle = (cp.title || '').trim().toLowerCase();
+
+        // If coordinates match
+        if (pLat !== 0 && pLng !== 0 && cp.lat !== 0 && cp.lng !== 0) {
+          const dLat = Math.abs(cp.lat - pLat);
+          const dLng = Math.abs(cp.lng - pLng);
+          if (dLat < 0.0001 && dLng < 0.0001) return true;
+        }
+
+        // If both have KM and KM matches (e.g. 54+635 === 54+635)
+        if (cleanKm && cpKm && cleanKm === cpKm) {
+          // If either is a crossing, merge parameters!
+          if (cp.category === 'crossing' || p.category === 'crossing') return true;
+          if (cleanTitle === cpTitle || cleanTitle.includes(cpTitle) || cpTitle.includes(cleanTitle)) return true;
+        }
+
+        // Title match
+        if (cleanTitle && cpTitle && (cleanTitle === cpTitle)) return true;
+
+        return false;
+      });
+
+      if (existingIdx >= 0) {
+        const existing = currentList[existingIdx];
         // Merge photos & notes
         const photoMap = new Map();
         (existing.photos || []).forEach((ph: any) => photoMap.set(ph.id, ph));
@@ -999,18 +1050,34 @@ export async function importRailwayPoints(
         (existing.notes || []).forEach((n: any) => noteMap.set(n.id, n));
         (p.notes || []).forEach((n: any) => noteMap.set(n.id, n));
 
-        map.set(p.id, {
+        // Merge levelCrossing
+        const mergedLc = {
+          ...(existing.levelCrossing || {}),
+          ...(p.levelCrossing || {}),
+        };
+        const hasLc = Object.values(mergedLc).some(Boolean);
+
+        const merged: RailwayPoint = {
           ...existing,
           ...p,
+          id: existing.id,
+          lat: p.lat !== 0 ? p.lat : existing.lat,
+          lng: p.lng !== 0 ? p.lng : existing.lng,
+          category: (p.category === 'crossing' || existing.category === 'crossing' || hasLc) ? 'crossing' : (p.category || existing.category),
+          levelCrossing: hasLc ? mergedLc : undefined,
           photos: Array.from(photoMap.values()),
           notes: Array.from(noteMap.values()),
-        });
+          updatedAt: new Date().toISOString(),
+        };
+
+        currentList[existingIdx] = merged;
+        recordUserCustomPoint(merged);
       } else {
-        map.set(p.id, p);
+        currentList.push(p);
+        recordUserCustomPoint(p);
       }
-      recordUserCustomPoint(p);
     });
-    newPoints = sortPointsByKm(Array.from(map.values()));
+    newPoints = sortPointsByKm(currentList);
   }
 
   saveLocalCachedPoints(newPoints);
