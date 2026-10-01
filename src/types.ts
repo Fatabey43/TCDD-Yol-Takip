@@ -148,3 +148,28 @@ export interface AuditLog {
   details: string;
   ip?: string;
 }
+
+/**
+ * TCDD Takyidat (Geçici/Kalıcı Hız Kısıtlaması & Yol Emri) Tanımı
+ */
+export interface TakyidatSpeedRestriction {
+  id: string;
+  startKm: string; // e.g. "54+000" veya "54"
+  endKm: string; // e.g. "55+000" veya "55"
+  startKmNum: number; // e.g. 54.0
+  endKmNum: number; // e.g. 55.0
+  lineName: string; // e.g. "Eskişehir-Konya" veya "Tüm Hatlar"
+  speedLimit: number; // e.g. 30, 50, 70 (km/s)
+  normalSpeed?: number; // e.g. 100, 120 (km/s)
+  reason: string; // e.g. "Yol tamiratı / Balast çalışması / Menfez yenileme"
+  status: 'active' | 'planned' | 'lifted'; // active: yürürlükte, planned: planlanan, lifted: kaldırıldı
+  trackType?: 'single' | 'line1' | 'line2' | 'both'; // Hat 1, Hat 2 vb.
+  startDate?: string;
+  endDate?: string;
+  issuedBy?: string; // e.g. "712 Yol Bakım Şefliği / Servis Müdürlüğü"
+  noticeNo?: string; // e.g. "Yol Emri No: 2026/14"
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+

@@ -34,6 +34,7 @@ const DELETED_USERS_FILE = path.join(DATA_DIR, 'deleted_users.json');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const STATE_FILE = path.join(DATA_DIR, 'database_state.json');
 const LOGS_FILE = path.join(DATA_DIR, 'audit_logs.json');
+const TAKYIDAT_FILE = path.join(DATA_DIR, 'takyidat_restrictions.json');
 const AUTH_SECRET = process.env.AUTH_SECRET || 'tcdd-demiryolu-auth-secret-key-2026';
 
 // Audit Log Interface & Helpers
@@ -1397,6 +1398,139 @@ app.get('/api/database-state', (req, res) => {
 // GET all permanently deleted/blacklisted point IDs
 app.get('/api/deleted-ids', (req, res) => {
   res.json(Array.from(getDeletedIds()));
+});
+
+// ---------------- TAKYİDAT (HIZ KISITLAMALARI & YOL EMRİ) API ----------------
+function getTakyidatList(): any[] {
+  try {
+    if (fs.existsSync(TAKYIDAT_FILE)) {
+      const raw = fs.readFileSync(TAKYIDAT_FILE, 'utf-8');
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) return list;
+    }
+  } catch (err) {
+    console.error('Error reading takyidat file:', err);
+  }
+  return [];
+}
+
+function saveTakyidatList(list: any[]) {
+  try {
+    fs.writeFileSync(TAKYIDAT_FILE, JSON.stringify(list, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving takyidat file:', err);
+  }
+}
+
+// GET all takyidat restrictions
+app.get('/api/takyidat', (req, res) => {
+  const list = getTakyidatList();
+  res.json(list);
+});
+
+// POST new takyidat restriction
+app.post('/api/takyidat', (req, res) => {
+  const body = req.body;
+  if (!body) {
+    return res.status(400).json({ error: 'Geçersiz veri' });
+  }
+
+  const startKm = String(body.startKm || '').trim();
+  const endKm = String(body.endKm || '').trim();
+  const startKmNum = typeof body.startKmNum === 'number' ? body.startKmNum : (parseKmToNumber(startKm) || 0);
+  const endKmNum = typeof body.endKmNum === 'number' ? body.endKmNum : (parseKmToNumber(endKm) || 0);
+  const speedLimit = Number(body.speedLimit) || 30;
+
+  const newEntry = {
+    id: body.id || `tak-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    startKm: startKm || `${startKmNum}+000`,
+    endKm: endKm || `${endKmNum}+000`,
+    startKmNum: Math.min(startKmNum, endKmNum),
+    endKmNum: Math.max(startKmNum, endKmNum),
+    lineName: body.lineName || 'Eskişehir-Konya',
+    speedLimit,
+    normalSpeed: Number(body.normalSpeed) || 120,
+    reason: body.reason || 'Yol Bakım & Onarım Çalışması',
+    status: body.status || 'active',
+    trackType: body.trackType || 'both',
+    startDate: body.startDate || new Date().toISOString(),
+    endDate: body.endDate || '',
+    issuedBy: body.issuedBy || '712 Yol Bakım Şefliği',
+    noticeNo: body.noticeNo || `YOL EMRİ ${new Date().getFullYear()}/${Math.floor(Math.random() * 90 + 10)}`,
+    notes: body.notes || '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const list = getTakyidatList();
+  list.unshift(newEntry);
+  saveTakyidatList(list);
+
+  recordAuditLog({
+    action: 'TAKYIDAT_ADD',
+    status: 'success',
+    details: `Takyidat eklendi: KM ${newEntry.startKm} - ${newEntry.endKm}, Hız Sınırı: ${newEntry.speedLimit} km/s`,
+  });
+
+  notifyPointsChanged('takyidat_changed');
+  res.status(201).json(newEntry);
+});
+
+// PUT update takyidat restriction
+app.put('/api/takyidat/:id', (req, res) => {
+  const { id } = req.params;
+  const list = getTakyidatList();
+  const index = list.findIndex((item) => item.id === id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: 'Takyidat kaydı bulunamadı' });
+  }
+
+  const existing = list[index];
+  const body = req.body || {};
+  const startKm = body.startKm !== undefined ? String(body.startKm).trim() : existing.startKm;
+  const endKm = body.endKm !== undefined ? String(body.endKm).trim() : existing.endKm;
+  const startKmNum = typeof body.startKmNum === 'number' ? body.startKmNum : (parseKmToNumber(startKm) || existing.startKmNum);
+  const endKmNum = typeof body.endKmNum === 'number' ? body.endKmNum : (parseKmToNumber(endKm) || existing.endKmNum);
+
+  const updated = {
+    ...existing,
+    ...body,
+    id: existing.id,
+    startKm,
+    endKm,
+    startKmNum: Math.min(startKmNum, endKmNum),
+    endKmNum: Math.max(startKmNum, endKmNum),
+    speedLimit: Number(body.speedLimit) || existing.speedLimit,
+    updatedAt: new Date().toISOString(),
+  };
+
+  list[index] = updated;
+  saveTakyidatList(list);
+
+  notifyPointsChanged('takyidat_changed');
+  res.json(updated);
+});
+
+// DELETE takyidat restriction
+app.delete('/api/takyidat/:id', (req, res) => {
+  const { id } = req.params;
+  const list = getTakyidatList();
+  const filtered = list.filter((item) => item.id !== id);
+
+  if (filtered.length === list.length) {
+    return res.status(404).json({ error: 'Takyidat kaydı bulunamadı' });
+  }
+
+  saveTakyidatList(filtered);
+  recordAuditLog({
+    action: 'TAKYIDAT_DELETE',
+    status: 'warning',
+    details: `Takyidat silindi: ID ${id}`,
+  });
+
+  notifyPointsChanged('takyidat_changed');
+  res.json({ success: true, message: 'Takyidat kaydı silindi' });
 });
 
 // POST reset: cleans all points and keeps default points blacklisted

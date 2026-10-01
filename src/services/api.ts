@@ -1,9 +1,9 @@
-import { RailwayPoint, PointNote, PointPhoto } from '../types.ts';
+import { RailwayPoint, PointNote, PointPhoto, TakyidatSpeedRestriction } from '../types.ts';
 import { DEFAULT_SAMPLE_IDS } from '../data/samplePoints.ts';
 import { extractKmFromText } from '../utils/categoryColors.ts';
 import { compressImage } from '../utils/imageCompressor.ts';
 import { savePointsToIDB, getPointsFromIDB, clearPointsFromIDB } from '../utils/dbStorage.ts';
-import { sortPointsByKm } from '../utils/kmUtils.ts';
+import { sortPointsByKm, parseKmToNumber } from '../utils/kmUtils.ts';
 
 const LOCAL_STORAGE_KEY = 'demiryolu_km_points_cache';
 const LOCAL_BACKUP_KEY = 'demiryolu_km_points_backup_v2';
@@ -1112,3 +1112,122 @@ export async function resetToDefaultRailwayPoints(): Promise<RailwayPoint[]> {
 // Aliases for compatibility
 export const batchImportPoints = importRailwayPoints;
 export const resetToSamplePoints = resetToDefaultRailwayPoints;
+
+// ---------------- TAKYİDAT (HIZ KISITLAMALARI) CLIENT SERVICE ----------------
+const TAKYIDAT_STORAGE_KEY = 'tcdd_takyidat_restrictions_cache_v1';
+
+export function getLocalCachedTakyidat(): TakyidatSpeedRestriction[] {
+  try {
+    const raw = localStorage.getItem(TAKYIDAT_STORAGE_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return arr;
+    }
+  } catch {}
+  return [];
+}
+
+export function saveLocalCachedTakyidat(list: TakyidatSpeedRestriction[]): void {
+  try {
+    localStorage.setItem(TAKYIDAT_STORAGE_KEY, JSON.stringify(list));
+  } catch {}
+}
+
+export async function fetchTakyidatList(): Promise<TakyidatSpeedRestriction[]> {
+  try {
+    const res = await fetch(`/api/takyidat?_t=${Date.now()}`, { cache: 'no-store' });
+    if (res.ok) {
+      const list = await res.json();
+      if (Array.isArray(list)) {
+        saveLocalCachedTakyidat(list);
+        return list;
+      }
+    }
+  } catch (err) {
+    console.warn('Takyidat sunucudan çekilemedi, çevrimdışı yerel veriler kullanılıyor:', err);
+  }
+  return getLocalCachedTakyidat();
+}
+
+export async function saveNewTakyidat(
+  entry: Omit<TakyidatSpeedRestriction, 'id' | 'createdAt' | 'updatedAt' | 'startKmNum' | 'endKmNum'>
+): Promise<TakyidatSpeedRestriction> {
+  const startKmNum = parseKmToNumber(entry.startKm) || 0;
+  const endKmNum = parseKmToNumber(entry.endKm) || 0;
+  const tempId = `tak-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+
+  const newObj: TakyidatSpeedRestriction = {
+    ...entry,
+    id: tempId,
+    startKmNum: Math.min(startKmNum, endKmNum),
+    endKmNum: Math.max(startKmNum, endKmNum),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const local = getLocalCachedTakyidat();
+  saveLocalCachedTakyidat([newObj, ...local.filter((t) => t.id !== newObj.id)]);
+
+  try {
+    const res = await fetch('/api/takyidat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newObj),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      const updatedList = [created, ...local.filter((t) => t.id !== tempId && t.id !== created.id)];
+      saveLocalCachedTakyidat(updatedList);
+      return created;
+    }
+  } catch (err) {
+    console.warn('Takyidat çevrimdışı kaydedildi:', err);
+  }
+  return newObj;
+}
+
+export async function updateExistingTakyidat(
+  entry: TakyidatSpeedRestriction
+): Promise<TakyidatSpeedRestriction> {
+  const startKmNum = parseKmToNumber(entry.startKm) || entry.startKmNum;
+  const endKmNum = parseKmToNumber(entry.endKm) || entry.endKmNum;
+
+  const updatedObj: TakyidatSpeedRestriction = {
+    ...entry,
+    startKmNum: Math.min(startKmNum, endKmNum),
+    endKmNum: Math.max(startKmNum, endKmNum),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const local = getLocalCachedTakyidat();
+  const updatedList = local.map((t) => (t.id === updatedObj.id ? updatedObj : t));
+  saveLocalCachedTakyidat(updatedList);
+
+  try {
+    const res = await fetch(`/api/takyidat/${encodeURIComponent(entry.id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedObj),
+    });
+    if (res.ok) {
+      const serverUpdated = await res.json();
+      saveLocalCachedTakyidat(local.map((t) => (t.id === serverUpdated.id ? serverUpdated : t)));
+      return serverUpdated;
+    }
+  } catch (err) {
+    console.warn('Takyidat güncellemesi çevrimdışı kaydedildi:', err);
+  }
+  return updatedObj;
+}
+
+export async function deleteTakyidatById(id: string): Promise<boolean> {
+  const local = getLocalCachedTakyidat();
+  saveLocalCachedTakyidat(local.filter((t) => t.id !== id));
+
+  try {
+    const res = await fetch(`/api/takyidat/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    return res.ok;
+  } catch {
+    return true;
+  }
+}

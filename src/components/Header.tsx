@@ -23,6 +23,8 @@ import {
   LogOut,
   Lock,
   FileText,
+  WifiOff,
+  Gauge,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -31,6 +33,9 @@ interface HeaderProps {
   availableLines: string[];
   totalPoints: number;
   filteredCount: number;
+  isOnline?: boolean;
+  activeTakyidatCount?: number;
+  onOpenTakyidat?: () => void;
   onOpenAddModal: () => void;
   onOpenImportExport: () => void;
   onOpenMobileInstall: () => void;
@@ -70,6 +75,9 @@ export const Header: React.FC<HeaderProps> = ({
   availableLines,
   totalPoints,
   filteredCount,
+  isOnline = true,
+  activeTakyidatCount = 0,
+  onOpenTakyidat,
   onOpenAddModal,
   onOpenImportExport,
   onOpenMobileInstall,
@@ -126,18 +134,36 @@ export const Header: React.FC<HeaderProps> = ({
                   KM &amp; SAHA TAKİP
                 </h1>
               </div>
-              {/* Live Multi-Device Sync Indicator */}
+              {/* Live Multi-Device Sync & Offline Status Indicator */}
               <div
                 id="cloud-sync-status-badge"
-                title="Tüm cihazlarınızla (telefon, tablet, bilgisayar) anlık canlı senkronize edilir"
-                className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full font-bold flex-shrink-0 ml-1 shadow-2xs"
+                title={
+                  isOnline
+                    ? 'Tüm cihazlarınızla (telefon, tablet, bilgisayar) anlık canlı senkronize edilir'
+                    : 'Çevrimdışı (Offline) mod: Sahadaki tüm verileriniz telefonunuzun yerel hafızasında korunur'
+                }
+                className={`flex items-center gap-1.5 text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full font-bold flex-shrink-0 ml-1 shadow-2xs border ${
+                  isOnline
+                    ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
+                    : 'bg-amber-500/15 border-amber-500/50 text-amber-300 animate-pulse'
+                }`}
               >
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                <span className="hidden md:inline">Canlı Hat: </span>
-                <span className="font-mono font-black">{totalPoints} Nokta</span>
+                {isOnline ? (
+                  <>
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span className="hidden md:inline">Canlı Hat: </span>
+                    <span className="font-mono font-black">{totalPoints} Nokta</span>
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="w-3 h-3 text-amber-400" />
+                    <span>Çevrimdışı (Offline)</span>
+                    <span className="font-mono font-black hidden sm:inline">({totalPoints} Nokta Kayıtlı)</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -273,6 +299,29 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <Palette className="w-3.5 h-3.5 text-purple-400" />
                 <span className="hidden lg:inline">Renkler</span>
+              </button>
+            )}
+
+            {/* Takyidat Hız Sınırları & Yol Emirleri Butonu */}
+            {onOpenTakyidat && (
+              <button
+                id="header-open-takyidat-btn"
+                onClick={onOpenTakyidat}
+                className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer relative shadow-2xs ${
+                  activeTakyidatCount > 0
+                    ? 'bg-red-600 hover:bg-red-500 text-white ring-1 ring-red-400 animate-pulse'
+                    : 'bg-slate-800 hover:bg-slate-700 text-red-300 border border-red-500/30'
+                }`}
+                title="TCDD Takyidat & Hız Kısıtlamaları Paneli (Örn: KM 54-55 arası hız tahditleri)"
+              >
+                <Gauge className="w-3.5 h-3.5 text-red-200" />
+                <span className="hidden md:inline">Takyidat</span>
+                <span className="md:hidden">Hız</span>
+                {activeTakyidatCount > 0 && (
+                  <span className="bg-amber-400 text-slate-950 px-1.5 py-0.2 rounded-full text-[10px] font-black">
+                    {activeTakyidatCount}
+                  </span>
+                )}
               </button>
             )}
 

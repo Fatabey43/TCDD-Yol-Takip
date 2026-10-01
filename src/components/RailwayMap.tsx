@@ -1,9 +1,16 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import L from 'leaflet';
-import { RailwayPoint, RailwayPointCategory } from '../types.ts';
+import { RailwayPoint, RailwayPointCategory, TakyidatSpeedRestriction } from '../types.ts';
 import { CategoryColorConfig, DEFAULT_CATEGORY_COLORS, formatKmDisplay } from '../utils/categoryColors.ts';
-import { getDistanceMeters, formatMeterDistance, calculatePolylineMeasurements, LatLngPoint } from '../utils/measurement.ts';
-import { Layers, Locate, Maximize2, Plus, Train, Ruler, RotateCcw, Undo2, Check, RotateCw, Globe, ExternalLink, MapPin, Crosshair } from 'lucide-react';
+import {
+  getDistanceMeters,
+  formatMeterDistance,
+  calculatePolylineMeasurements,
+  calculateLiveChainage,
+  LatLngPoint,
+} from '../utils/measurement.ts';
+import { parseKmToNumber } from '../utils/kmUtils.ts';
+import { Layers, Locate, Maximize2, Plus, Train, Ruler, RotateCcw, Undo2, Check, RotateCw, Globe, ExternalLink, MapPin, Crosshair, Gauge, AlertTriangle } from 'lucide-react';
 
 interface RailwayMapProps {
   points: RailwayPoint[];
@@ -16,6 +23,8 @@ interface RailwayMapProps {
   initialMeasurePoint?: LatLngPoint | null;
   onRefresh?: () => void;
   isRefreshing?: boolean;
+  takyidatRestrictions?: TakyidatSpeedRestriction[];
+  onOpenTakyidat?: () => void;
 }
 
 function createMarkerIcon(
@@ -71,15 +80,19 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
   initialMeasurePoint = null,
   onRefresh,
   isRefreshing,
+  takyidatRestrictions = [],
+  onOpenTakyidat,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const railwayLayerRef = useRef<L.TileLayer | null>(null);
   const measureLayerRef = useRef<L.LayerGroup | null>(null);
+  const takyidatLayerRef = useRef<L.LayerGroup | null>(null);
 
   const [mapType, setMapType] = useState<'streets' | 'google-earth' | 'google-satellite' | 'esri-satellite'>('google-earth');
   const [showRailwayOverlay, setShowRailwayOverlay] = useState<boolean>(true);
+  const [showTakyidatOverlay, setShowTakyidatOverlay] = useState<boolean>(true);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const userMarkerRef = useRef<L.Marker | null>(null);
@@ -165,10 +178,12 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
     }).addTo(map);
 
     const markersGroup = L.layerGroup().addTo(map);
+    const takyidatGroup = L.layerGroup().addTo(map);
     const measureGroup = L.layerGroup().addTo(map);
 
     mapInstanceRef.current = map;
     markersLayerRef.current = markersGroup;
+    takyidatLayerRef.current = takyidatGroup;
     railwayLayerRef.current = railwayOverlay;
     measureLayerRef.current = measureGroup;
 
@@ -482,6 +497,152 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
     });
   }, [points, selectedPoint, onSelectPoint, categoryColors]);
 
+  // Render Takyidat (Speed Restriction Segments & Warning Badges) on the Railway Map
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const takyidatGroup = takyidatLayerRef.current;
+    if (!map || !takyidatGroup) return;
+
+    takyidatGroup.clearLayers();
+    if (!showTakyidatOverlay || takyidatRestrictions.length === 0) return;
+
+    // Helper: Find coordinates for a given KM by searching existing points or interpolating
+    const pointsWithKm = points
+      .map((p) => ({
+        point: p,
+        kmNum: parseKmToNumber(p.kmValue, p.title),
+      }))
+      .filter((item): item is { point: RailwayPoint; kmNum: number } => item.kmNum !== null)
+      .sort((a, b) => a.kmNum - b.kmNum);
+
+    const getCoordForKm = (kmNum: number, lineName?: string): [number, number] | null => {
+      const linePts = lineName && lineName !== 'Tüm Hatlar'
+        ? pointsWithKm.filter((item) => !item.point.lineName || item.point.lineName === lineName)
+        : pointsWithKm;
+
+      const ptsToUse = linePts.length > 0 ? linePts : pointsWithKm;
+      if (ptsToUse.length === 0) return null;
+
+      // Exact match
+      const exact = ptsToUse.find((p) => Math.abs(p.kmNum - kmNum) < 0.05);
+      if (exact) return [exact.point.lat, exact.point.lng];
+
+      // Find surrounding points to interpolate
+      let before = ptsToUse[0];
+      let after = ptsToUse[ptsToUse.length - 1];
+
+      for (let i = 0; i < ptsToUse.length - 1; i++) {
+        if (ptsToUse[i].kmNum <= kmNum && ptsToUse[i + 1].kmNum >= kmNum) {
+          before = ptsToUse[i];
+          after = ptsToUse[i + 1];
+          break;
+        }
+      }
+
+      if (before.kmNum === after.kmNum || before.kmNum === kmNum) {
+        return [before.point.lat, before.point.lng];
+      }
+
+      const ratio = Math.max(0, Math.min(1, (kmNum - before.kmNum) / (after.kmNum - before.kmNum)));
+      const lat = before.point.lat + (after.point.lat - before.point.lat) * ratio;
+      const lng = before.point.lng + (after.point.lng - before.point.lng) * ratio;
+      return [lat, lng];
+    };
+
+    takyidatRestrictions.forEach((restriction) => {
+      const isLifted = restriction.status === 'lifted';
+      const isPlanned = restriction.status === 'planned';
+
+      const startCoord = getCoordForKm(restriction.startKmNum, restriction.lineName);
+      const endCoord = getCoordForKm(restriction.endKmNum, restriction.lineName);
+
+      if (!startCoord || !endCoord) return;
+
+      // Gather intermediate points in this KM range to follow railway curves
+      const intermediatePoints = pointsWithKm
+        .filter((item) => {
+          const matchLine = !restriction.lineName || restriction.lineName === 'Tüm Hatlar' || item.point.lineName === restriction.lineName;
+          return matchLine && item.kmNum >= restriction.startKmNum && item.kmNum <= restriction.endKmNum;
+        })
+        .map((item) => [item.point.lat, item.point.lng] as [number, number]);
+
+      const polylineCoords: [number, number][] = [startCoord, ...intermediatePoints, endCoord];
+
+      // Draw highlighted speed restriction track line
+      const trackColor = isLifted ? '#10b981' : isPlanned ? '#f59e0b' : '#dc2626';
+
+      // Outer glow polyline
+      L.polyline(polylineCoords, {
+        color: trackColor,
+        weight: 8,
+        opacity: isLifted ? 0.3 : 0.45,
+        lineCap: 'round',
+      }).addTo(takyidatGroup);
+
+      // Inner dashed caution polyline
+      const speedPolyline = L.polyline(polylineCoords, {
+        color: isLifted ? '#059669' : '#b91c1c',
+        weight: 4,
+        dashArray: isLifted ? '8, 8' : '6, 6',
+        opacity: 0.95,
+      }).addTo(takyidatGroup);
+
+      // Tooltip on the restriction line
+      speedPolyline.bindTooltip(
+        `
+        <div class="text-xs font-sans notranslate p-1" translate="no">
+          <div class="flex items-center gap-1.5 font-black ${isLifted ? 'text-emerald-700' : 'text-red-700'}">
+            <span>⚠️ HIZ TAHDİDİ: ${restriction.speedLimit} KM/S</span>
+          </div>
+          <div class="font-bold text-slate-800 text-[11px] mt-0.5">KM ${restriction.startKm} - ${restriction.endKm}</div>
+          <div class="text-slate-600 text-[10px]">${restriction.reason}</div>
+          ${restriction.noticeNo ? `<div class="text-[9px] text-slate-400 font-mono mt-0.5">${restriction.noticeNo}</div>` : ''}
+        </div>
+      `,
+        { sticky: true }
+      );
+
+      // Prominent Speed Restriction Badge at Midpoint of segment
+      const midIdx = Math.floor(polylineCoords.length / 2);
+      const midCoord = polylineCoords[midIdx] || startCoord;
+
+      const badgeHtml = `
+        <div class="cursor-pointer group relative flex items-center justify-center notranslate" translate="no" title="Takyidat: KM ${restriction.startKm} - ${restriction.endKm} (${restriction.speedLimit} km/s)">
+          <div class="absolute -inset-1 rounded-full ${isLifted ? 'bg-emerald-400/30' : 'bg-red-500/40 animate-ping'}"></div>
+          <div class="w-10 h-10 rounded-full border-2 ${isLifted ? 'border-emerald-600 bg-white text-emerald-800' : 'border-red-600 bg-white text-red-950'} flex flex-col items-center justify-center shadow-xl ring-2 ${isLifted ? 'ring-emerald-300' : 'ring-red-400/80'} transform transition-transform group-hover:scale-125">
+            <span class="text-[7px] font-black uppercase text-red-600 leading-none">HIZ</span>
+            <span class="text-xs font-black font-mono leading-none">${restriction.speedLimit}</span>
+            <span class="text-[6px] font-bold text-slate-500 leading-none">KM/S</span>
+          </div>
+        </div>
+      `;
+
+      const badgeIcon = L.divIcon({
+        html: badgeHtml,
+        className: 'custom-takyidat-marker',
+        iconSize: [40, 40],
+        iconAnchor: [20, 20],
+      });
+
+      const badgeMarker = L.marker(midCoord, { icon: badgeIcon }).addTo(takyidatGroup);
+      badgeMarker.on('click', () => {
+        if (onOpenTakyidat) onOpenTakyidat();
+      });
+      badgeMarker.bindTooltip(
+        `
+        <div class="text-xs font-sans notranslate p-1" translate="no">
+          <div class="font-extrabold text-red-700">⚠️ TAKYİDAT (HIZ KISITLAMASI)</div>
+          <div class="font-mono font-bold text-slate-900 mt-0.5">KM ${restriction.startKm} ➔ KM ${restriction.endKm}</div>
+          <div class="text-xs font-black text-red-600">Azami Hız: ${restriction.speedLimit} km/s (Normal: ${restriction.normalSpeed || 120} km/s)</div>
+          <div class="text-slate-600 text-[11px] mt-1">${restriction.reason}</div>
+          <div class="text-[10px] text-sky-600 font-bold mt-1">Detayları görmek için tıklayın ➔</div>
+        </div>
+      `,
+        { direction: 'top', offset: [0, -16] }
+      );
+    });
+  }, [points, takyidatRestrictions, showTakyidatOverlay, onOpenTakyidat]);
+
   // Pan to selected point
   useEffect(() => {
     const map = mapInstanceRef.current;
@@ -783,6 +944,27 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
             </button>
           )}
 
+          {/* Takyidat Hız Sınırları & Yol Emirleri Modal Butonu */}
+          {onOpenTakyidat && (
+            <button
+              id="map-takyidat-btn"
+              onClick={onOpenTakyidat}
+              title="TCDD Takyidat & Hız Kısıtlamalarını Gör / Ekle"
+              className={`p-2 sm:p-2.5 rounded-xl transition-all flex items-center justify-center cursor-pointer relative ${
+                takyidatRestrictions.some((r) => r.status === 'active')
+                  ? 'bg-red-600 text-white shadow-sm ring-2 ring-red-400/60 animate-pulse'
+                  : 'text-slate-700 hover:text-red-600 hover:bg-red-50'
+              }`}
+            >
+              <Gauge className="w-4 h-4" />
+              {takyidatRestrictions.some((r) => r.status === 'active') && (
+                <span className="absolute -top-1 -right-1 bg-amber-400 text-slate-950 text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-white">
+                  {takyidatRestrictions.filter((r) => r.status === 'active').length}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Fit all points */}
           <button
             id="map-fit-all-btn"
@@ -924,7 +1106,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
             </button>
 
             {/* OpenRailwayMap Overlay Checkbox */}
-            <div className="pt-2 border-t border-slate-100">
+            <div className="pt-2 border-t border-slate-100 space-y-1">
               <label className="flex items-center gap-2 cursor-pointer select-none text-slate-700 py-1">
                 <input
                   id="map-toggle-railway-overlay"
@@ -934,6 +1116,21 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
                   className="rounded text-sky-600 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
                 />
                 <span className="font-medium">Demiryolu Hatları (OpenRailwayMap)</span>
+              </label>
+
+              {/* Takyidat Overlay Toggle */}
+              <label className="flex items-center gap-2 cursor-pointer select-none text-red-700 py-1 font-bold">
+                <input
+                  id="map-toggle-takyidat-overlay"
+                  type="checkbox"
+                  checked={showTakyidatOverlay}
+                  onChange={(e) => setShowTakyidatOverlay(e.target.checked)}
+                  className="rounded text-red-600 focus:ring-red-500 w-3.5 h-3.5 cursor-pointer"
+                />
+                <span className="flex items-center gap-1.5">
+                  <Gauge className="w-3.5 h-3.5 text-red-600" />
+                  <span>Takyidat &amp; Hız Sınırları ({takyidatRestrictions.length})</span>
+                </span>
               </label>
             </div>
 
@@ -958,12 +1155,27 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
       </div>
     </div>
 
-      {/* Total Points Badge */}
-      <div className="absolute top-4 left-4 z-10 bg-slate-900/90 backdrop-blur-md text-white px-3 py-1.5 rounded-xl shadow-lg border border-slate-700/50 flex items-center gap-2 text-xs font-medium">
-        <Train className="w-3.5 h-3.5 text-sky-400" />
-        <span>
-          {points.length} demiryolu noktası kayıtlı
-        </span>
+      {/* Total Points & Active Takyidat Badges (Top Left) */}
+      <div className="absolute top-4 left-4 z-10 flex items-center gap-2 flex-wrap">
+        <div className="bg-slate-900/90 backdrop-blur-md text-white px-3 py-1.5 rounded-xl shadow-lg border border-slate-700/50 flex items-center gap-2 text-xs font-medium">
+          <Train className="w-3.5 h-3.5 text-sky-400" />
+          <span>
+            {points.length} demiryolu noktası kayıtlı
+          </span>
+        </div>
+
+        {takyidatRestrictions.some((r) => r.status === 'active') && onOpenTakyidat && (
+          <button
+            onClick={onOpenTakyidat}
+            className="bg-red-600/95 hover:bg-red-500 backdrop-blur-md text-white px-3 py-1.5 rounded-xl shadow-lg border border-red-400/60 flex items-center gap-2 text-xs font-bold transition-all active:scale-95 cursor-pointer animate-pulse"
+            title="Aktif Takyidat ve Hız Tahditlerini Listele"
+          >
+            <Gauge className="w-3.5 h-3.5 text-amber-200" />
+            <span>
+              {takyidatRestrictions.filter((r) => r.status === 'active').length} Hız Tahdidi (Takyidat)
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );

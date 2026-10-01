@@ -12,6 +12,10 @@ import {
   batchImportPoints,
   resetToSamplePoints,
   syncAllPhotosToServer,
+  fetchTakyidatList,
+  saveNewTakyidat,
+  updateExistingTakyidat,
+  deleteTakyidatById,
 } from './services/api.ts';
 import { exportToJSON } from './utils/kmlParser.ts';
 import { RailwayMap } from './components/RailwayMap.tsx';
@@ -22,9 +26,10 @@ import { ImportExportModal } from './components/ImportExportModal.tsx';
 import { MobileInstallModal } from './components/MobileInstallModal.tsx';
 import { ReportModal } from './components/ReportModal.tsx';
 import { WorkLogModal } from './components/WorkLogModal.tsx';
+import { TakyidatModal } from './components/TakyidatModal.tsx';
 import { LiveKmIndicator } from './components/LiveKmIndicator.tsx';
 import { calculateLiveRailwayKm, NearestKmResult } from './utils/liveRailwayKm.ts';
-import { WorkLog } from './types.ts';
+import { WorkLog, TakyidatSpeedRestriction } from './types.ts';
 import { Header } from './components/Header.tsx';
 import { PointListSidebar } from './components/PointListSidebar.tsx';
 import { ColorPaletteTabBar } from './components/ColorPaletteTabBar.tsx';
@@ -74,6 +79,8 @@ export default function App() {
   const [isMobileInstallOpen, setIsMobileInstallOpen] = useState<boolean>(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
   const [workLogPoint, setWorkLogPoint] = useState<RailwayPoint | null>(null);
+  const [isTakyidatModalOpen, setIsTakyidatModalOpen] = useState<boolean>(false);
+  const [takyidatList, setTakyidatList] = useState<TakyidatSpeedRestriction[]>([]);
   
   // Live GPS KM State
   const [liveGpsCoords, setLiveGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -106,9 +113,10 @@ export default function App() {
     category: 'all',
   });
 
-  // Notification Toast
+  // Notification Toast & Network Online Status
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -117,27 +125,36 @@ export default function App() {
     }, 3500);
   };
 
-  // Start measurement from a point
+  // Start measurement from a point with KM chainage calculator support
   const handleStartMeasure = (point: RailwayPoint) => {
-    setMeasureInitialPoint({ lat: point.lat, lng: point.lng });
+    setMeasureInitialPoint({
+      lat: point.lat,
+      lng: point.lng,
+      label: point.kmValue || point.title,
+    });
     setIsAddMode(false);
     if (viewMode === 'list') {
       setViewMode('map');
       setActiveTab('map');
     }
-    showToast(`"${point.title}" üzerinden mesafe/metre ölçümü başlatıldı.`);
+    const cleanKm = point.kmValue || point.title;
+    showToast(`"${cleanKm}" üzerinden canlı ray boyu KM cetveli başlatıldı. Farenizi hat boyunca sürükleyin.`);
   };
 
   const lastRevisionRef = useRef<number>(0);
   const currentPointCountRef = useRef<number>(0);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
 
-  // Load points on mount
+  // Load points & takyidat on mount
   const loadPoints = useCallback(async () => {
     try {
-      const data = await fetchRailwayPoints();
+      const [data, takData] = await Promise.all([
+        fetchRailwayPoints(),
+        fetchTakyidatList().catch(() => []),
+      ]);
       const sorted = sortPointsByKm(data);
       setPoints(sorted);
+      setTakyidatList(takData);
       currentPointCountRef.current = sorted.length;
       // If a point was selected, refresh its data reference
       setSelectedPoint((curr) => (curr ? sorted.find((p) => p.id === curr.id) || null : null));
@@ -154,12 +171,16 @@ export default function App() {
     try {
       lastRevisionRef.current = 0;
       currentPointCountRef.current = -1;
-      const data = await fetchRailwayPoints();
+      const [data, takData] = await Promise.all([
+        fetchRailwayPoints(),
+        fetchTakyidatList().catch(() => []),
+      ]);
       const sorted = sortPointsByKm(data);
       setPoints(sorted);
+      setTakyidatList(takData);
       currentPointCountRef.current = sorted.length;
       setSelectedPoint((curr) => (curr ? sorted.find((p) => p.id === curr.id) || null : null));
-      showToast(`Harita ve demiryolu noktaları güncellendi (${sorted.length} nokta KM sırasına göre hazır).`);
+      showToast(`Harita, demiryolu noktaları ve takyidat hız sınırları güncellendi.`);
     } catch (err) {
       console.error('Yenileme hatası:', err);
       showToast('Güncelleme sırasında bir sorun oluştu, çevrimdışı veriler korunuyor.');
@@ -264,15 +285,22 @@ export default function App() {
       loadPoints();
     };
     const handleOnline = () => {
+      setIsOnline(true);
+      showToast('İnternet bağlantısı sağlandı. Veriler eşitleniyor...');
       lastRevisionRef.current = 0;
       currentPointCountRef.current = -1;
       setupSSE();
       loadPoints();
     };
+    const handleOffline = () => {
+      setIsOnline(false);
+      showToast('Çevrimdışı (Offline) moda geçildi. Sahadaki tüm noktalarınız cihazınızda güvende.');
+    };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleFocus);
     window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
 
     // 4. Fast lightweight version & count poll fallback (checks revision & point count every 3 seconds)
     // Ensures if any device has extra or missing points, it automatically synchronizes immediately!
@@ -328,6 +356,7 @@ export default function App() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
   }, [user, loadPoints]);
@@ -815,6 +844,49 @@ export default function App() {
     showToast('Tüm KM bilgileri ve noktalar başarıyla silindi.');
   };
 
+  // Takyidat CRUD Handlers
+  const handleAddTakyidat = async (
+    entry: Omit<TakyidatSpeedRestriction, 'id' | 'createdAt' | 'updatedAt' | 'startKmNum' | 'endKmNum'>
+  ) => {
+    const created = await saveNewTakyidat(entry);
+    setTakyidatList((prev) => [created, ...prev.filter((t) => t.id !== created.id)]);
+    broadcastLocalChange();
+    showToast(`⚠️ KM ${created.startKm}-${created.endKm} arasına ${created.speedLimit} km/s hız tahdidi eklendi.`);
+  };
+
+  const handleUpdateTakyidat = async (entry: TakyidatSpeedRestriction) => {
+    const updated = await updateExistingTakyidat(entry);
+    setTakyidatList((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    broadcastLocalChange();
+    showToast(`KM ${updated.startKm}-${updated.endKm} hız tahdidi güncellendi.`);
+  };
+
+  const handleDeleteTakyidat = async (id: string) => {
+    await deleteTakyidatById(id);
+    setTakyidatList((prev) => prev.filter((t) => t.id !== id));
+    broadcastLocalChange();
+    showToast('Takyidat hız tahdidi kaydı silindi.');
+  };
+
+  const handleFocusTakyidatSegment = (startKmNum: number, endKmNum: number) => {
+    // Switch to map view
+    if (viewMode === 'list') {
+      setViewMode('map');
+      setActiveTab('map');
+    }
+    // Find points near this segment to center map
+    const midKm = (startKmNum + endKmNum) / 2;
+    const matchingPoint = points.find((p) => {
+      const km = parseKmToNumber(p.kmValue, p.title);
+      return km !== null && Math.abs(km - midKm) < 1.0;
+    });
+
+    if (matchingPoint) {
+      setSelectedPoint(matchingPoint);
+    }
+    showToast(`KM ${startKmNum}+000 ➔ ${endKmNum}+000 takyidat hız kısıtlaması kesimine odaklanıldı.`);
+  };
+
   // If verifying session
   if (authLoading) {
     return (
@@ -860,6 +932,9 @@ export default function App() {
         availableLines={availableLines}
         totalPoints={points.length}
         filteredCount={filteredPoints.length}
+        isOnline={isOnline}
+        activeTakyidatCount={takyidatList.filter((r) => r.status === 'active').length}
+        onOpenTakyidat={() => setIsTakyidatModalOpen(true)}
         onOpenAddModal={handleOpenAddModal}
         onOpenImportExport={() => setIsImportExportOpen(true)}
         onOpenMobileInstall={() => setIsMobileInstallOpen(true)}
@@ -943,6 +1018,8 @@ export default function App() {
                 initialMeasurePoint={measureInitialPoint}
                 onRefresh={handleRefresh}
                 isRefreshing={isRefreshing}
+                takyidatRestrictions={takyidatList}
+                onOpenTakyidat={() => setIsTakyidatModalOpen(true)}
               />
 
               {/* Toggle Sidebar Button for Desktop */}
@@ -976,6 +1053,8 @@ export default function App() {
             onDeletePhoto={handleDeletePhoto}
             onStartMeasure={handleStartMeasure}
             onOpenWorkLogs={(pt) => setWorkLogPoint(pt)}
+            takyidatRestrictions={takyidatList}
+            onOpenTakyidat={() => setIsTakyidatModalOpen(true)}
             onPanToPoint={(pt) => {
               setSelectedPoint(pt);
               if (viewMode === 'list') {
@@ -1102,11 +1181,25 @@ export default function App() {
         onOpenMobileInstall={() => setIsMobileInstallOpen(true)}
         onOpenPalette={() => setActiveTab('palette')}
         onOpenReports={() => setIsReportModalOpen(true)}
+        onOpenTakyidat={() => setIsTakyidatModalOpen(true)}
+        activeTakyidatCount={takyidatList.filter((r) => r.status === 'active').length}
         onRefresh={handleRefresh}
         onExportJSON={handleExportJSON}
         onSyncPhotos={handleSyncPhotos}
         onOpenUserManagement={isAdmin ? () => setIsUserMgmtOpen(true) : undefined}
         isRefreshing={isRefreshing}
+      />
+
+      {/* TCDD Takyidat Hız Sınırları & Yol Emirleri Modalı */}
+      <TakyidatModal
+        isOpen={isTakyidatModalOpen}
+        onClose={() => setIsTakyidatModalOpen(false)}
+        restrictions={takyidatList}
+        onAddRestriction={handleAddTakyidat}
+        onUpdateRestriction={handleUpdateTakyidat}
+        onDeleteRestriction={handleDeleteTakyidat}
+        onFocusSegment={handleFocusTakyidatSegment}
+        availableLines={availableLines}
       />
 
       {/* TCDD Resmi Raporlar Modalı (Menfez, Geçit, Yapılan İşler) */}

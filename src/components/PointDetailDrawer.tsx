@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { RailwayPoint, RailwayPointCategory, PointNote, PointPhoto, TextStyleConfig } from '../types.ts';
+import { RailwayPoint, RailwayPointCategory, PointNote, PointPhoto, TextStyleConfig, TakyidatSpeedRestriction } from '../types.ts';
 import { CategoryColorConfig, DEFAULT_CATEGORY_COLORS, formatKmDisplay } from '../utils/categoryColors.ts';
 import { getTextStyleInline, DEFAULT_TEXT_STYLE } from '../utils/textStyleHelper.ts';
 import { compressImage } from '../utils/imageCompressor.ts';
@@ -9,6 +9,7 @@ import { TextFormattingToolbar } from './TextFormattingToolbar.tsx';
 import { DeleteConfirmModal } from './DeleteConfirmModal.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { exportSinglePointKML } from '../utils/kmlParser.ts';
+import { parseKmToNumber } from '../utils/kmUtils.ts';
 import {
   Navigation,
   Copy,
@@ -37,6 +38,8 @@ import {
   CornerUpRight,
   Percent,
   Wrench,
+  Gauge,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface PointDetailDrawerProps {
@@ -52,6 +55,8 @@ interface PointDetailDrawerProps {
   onStartMeasure?: (point: RailwayPoint) => void;
   onPanToPoint?: (point: RailwayPoint) => void;
   onOpenWorkLogs?: (point: RailwayPoint) => void;
+  takyidatRestrictions?: TakyidatSpeedRestriction[];
+  onOpenTakyidat?: () => void;
 }
 
 const CATEGORY_NAMES: Record<string, string> = {
@@ -120,6 +125,8 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
   onStartMeasure,
   onPanToPoint,
   onOpenWorkLogs,
+  takyidatRestrictions = [],
+  onOpenTakyidat,
 }) => {
   const { user, isAdmin, canAddNote, canAddPhoto, canDelete } = useAuth();
   // On mobile screens, start in compact mode so map remains visible and screen isn't crowded!
@@ -437,6 +444,19 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
                 <span>Haritada Git</span>
               </button>
 
+              {/* İKİ NOKTA ARASI RAY BOYU MESAFE CETVELİ & KM HESAPLAYICI (ÖNE ÇIKAN BUTON) */}
+              {onStartMeasure && (
+                <button
+                  id="drawer-start-measure-btn"
+                  onClick={() => onStartMeasure(point)}
+                  title="Bu KM noktasından itibaren ray boyunca mesafe ölç ve canlı KM hesapla"
+                  className="flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 px-3 py-1.5 rounded-lg font-black text-xs shadow-sm transition-all active:scale-[0.98] cursor-pointer ring-1 ring-amber-400/50"
+                >
+                  <Ruler className="w-4 h-4 stroke-[2.5]" />
+                  <span>Buradan Mesafe Ölç (KM Cetveli)</span>
+                </button>
+              )}
+
               {/* Google Maps Yol Tarifi */}
               <a
                 id="open-google-maps-directions-btn"
@@ -491,18 +511,6 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
               >
                 {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
-
-              {/* Mesafe / Metre Ölçümü Başlat */}
-              {onStartMeasure && (
-                <button
-                  id="drawer-start-measure-btn"
-                  onClick={() => onStartMeasure(point)}
-                  title="Bu Noktadan Mesafe Ölç"
-                  className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
-                >
-                  <Ruler className="w-3.5 h-3.5" />
-                </button>
-              )}
 
               {/* Yapılan İşler & Bakım Defteri Butonu */}
               {onOpenWorkLogs && (
@@ -665,6 +673,73 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
             {/* Tab 1: Info & Description */}
             {activeTab === 'info' && (
               <div className="space-y-3">
+                {/* Takyidat Hız Tahdidi Uyarısı (Eğer bu noktanın KM'si bir takyidat aralığına denk geliyorsa) */}
+                {(() => {
+                  const pointKmNum = parseKmToNumber(point.kmValue, point.title);
+                  if (pointKmNum === null) return null;
+
+                  const matchingTakyidat = takyidatRestrictions.filter((r) => {
+                    const lineMatch = !r.lineName || r.lineName === 'Tüm Hatlar' || r.lineName === point.lineName;
+                    return lineMatch && pointKmNum >= r.startKmNum && pointKmNum <= r.endKmNum;
+                  });
+
+                  if (matchingTakyidat.length === 0) return null;
+
+                  return (
+                    <div className="space-y-2">
+                      {matchingTakyidat.map((tak) => {
+                        const isLifted = tak.status === 'lifted';
+                        return (
+                          <div
+                            key={tak.id}
+                            className={`p-3 rounded-xl border flex items-center justify-between gap-3 shadow-xs ${
+                              isLifted
+                                ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                                : 'bg-red-50 border-red-300 text-red-950 animate-pulse'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div
+                                className={`w-10 h-10 rounded-full flex flex-col items-center justify-center border-2 flex-shrink-0 ${
+                                  isLifted
+                                    ? 'bg-white border-emerald-600 text-emerald-900'
+                                    : 'bg-white border-red-600 text-red-950'
+                                }`}
+                              >
+                                <span className="text-[6px] font-black uppercase text-red-600 leading-none">TAHDİT</span>
+                                <span className="text-xs font-black font-mono leading-none">{tak.speedLimit}</span>
+                                <span className="text-[6px] font-bold text-slate-500 leading-none">KM/S</span>
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-xs font-black text-red-700">
+                                    ⚠️ TAKYİDAT BÖLGESİNDE (KM {tak.startKm} - {tak.endKm})
+                                  </span>
+                                  <span className="text-[10px] bg-red-100 text-red-800 px-1.5 py-0.2 rounded font-bold">
+                                    Azami {tak.speedLimit} km/s
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-700 font-medium mt-0.5">
+                                  {tak.reason}
+                                </p>
+                              </div>
+                            </div>
+                            {onOpenTakyidat && (
+                              <button
+                                type="button"
+                                onClick={onOpenTakyidat}
+                                className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold rounded-lg border border-slate-300 shadow-2xs cursor-pointer flex-shrink-0"
+                              >
+                                İncele
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
                 {/* İç Kutu 1: Teknik Değerler Grid Kutusu */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                   <div className="bg-blue-50 p-2.5 rounded-xl border border-blue-200/90 notranslate shadow-2xs" translate="no">

@@ -14,6 +14,7 @@ import {
   RefreshCw,
   CloudUpload,
   FileText,
+  Gauge,
 } from 'lucide-react';
 
 interface MobileActionsDrawerProps {
@@ -24,6 +25,8 @@ interface MobileActionsDrawerProps {
   onOpenMobileInstall: () => void;
   onOpenPalette: () => void;
   onOpenReports?: () => void;
+  onOpenTakyidat?: () => void;
+  activeTakyidatCount?: number;
   onRefresh: () => void;
   onExportJSON: () => void;
   onSyncPhotos: () => void;
@@ -39,6 +42,8 @@ export const MobileActionsDrawer: React.FC<MobileActionsDrawerProps> = ({
   onOpenMobileInstall,
   onOpenPalette,
   onOpenReports,
+  onOpenTakyidat,
+  activeTakyidatCount = 0,
   onRefresh,
   onExportJSON,
   onSyncPhotos,
@@ -168,6 +173,30 @@ export const MobileActionsDrawer: React.FC<MobileActionsDrawerProps> = ({
               <div className="text-left leading-tight">
                 <span className="block font-bold">Resmi Raporlar</span>
                 <span className="text-[10px] text-sky-300/80">PDF &amp; Excel Çıktısı</span>
+              </div>
+            </button>
+          )}
+
+          {/* TCDD Takyidat & Hız Kısıtlamaları */}
+          {onOpenTakyidat && (
+            <button
+              onClick={() => {
+                onOpenTakyidat();
+                onClose();
+              }}
+              className="flex items-center gap-2 p-3 bg-red-950/80 hover:bg-red-900 active:bg-red-850 rounded-xl border border-red-500/50 transition-all font-semibold text-red-200"
+            >
+              <Gauge className="w-4 h-4 text-red-400" />
+              <div className="text-left leading-tight">
+                <span className="block font-bold flex items-center gap-1.5">
+                  <span>Takyidat &amp; Hız Sınırları</span>
+                  {activeTakyidatCount > 0 && (
+                    <span className="bg-amber-400 text-slate-950 px-1.5 py-0.2 rounded-full text-[9px] font-black">
+                      {activeTakyidatCount}
+                    </span>
+                  )}
+                </span>
+                <span className="text-[10px] text-red-300/80">KM Hız Tahditleri</span>
               </div>
             </button>
           )}

@@ -12,7 +12,8 @@ import {
   Train,
   CheckCircle2,
   Apple,
-  Monitor
+  Monitor,
+  WifiOff,
 } from 'lucide-react';
 
 interface MobileInstallModalProps {
@@ -225,6 +226,22 @@ export const MobileInstallModal: React.FC<MobileInstallModalProps> = ({
             <p className="text-[11px] text-amber-900 leading-relaxed">
               Bu uygulama bir APK kurulum dosyası olarak inmez. Modern <strong>PWA (Web Uygulaması)</strong> teknolojisi sayesinde telefonunuzun tarayıcısından <strong>&ldquo;Ana Ekrana Ekle&rdquo;</strong> veya <strong>&ldquo;Uygulamayı Yükle&rdquo;</strong> seçeneği ile doğrudan telefonunuza uygulama olarak kurulur.
             </p>
+          </div>
+
+          {/* Sahada Çevrimdışı (Offline) Çalışma Özelliği */}
+          <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-300 rounded-xl p-3 text-xs text-emerald-950 space-y-1.5 shadow-2xs">
+            <div className="font-bold flex items-center gap-1.5 text-emerald-900">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>📶 Sahada Çevrimdışı (Offline) Çalışma:</span>
+            </div>
+            <p className="text-[11px] text-emerald-900 leading-relaxed">
+              İnternet veya GSM çekmeyen demiryolu yarmaları ve dağlık hat kesimlerinde uygulama kesintisiz çalışmaya devam eder.
+            </p>
+            <ul className="text-[11px] text-emerald-800 space-y-1 list-disc list-inside">
+              <li><strong>Tüm KM Noktaları:</strong> Telefon hafızasında (IndexedDB) saklanır.</li>
+              <li><strong>Saha Fotoğrafları & Notlar:</strong> Çevrimdışı kaydedilir, internet geldiğinde otomatik eşitlenir.</li>
+              <li><strong>Harita & Cetvel:</strong> Önceden görüntülenen harita ve canlı ray boyu cetveli internetsiz kullanılır.</li>
+            </ul>
           </div>
 
           {/* Operating System Instructions Tab */}
