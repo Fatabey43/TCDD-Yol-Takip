@@ -25,6 +25,7 @@ import {
   FileText,
   WifiOff,
   Gauge,
+  Compass,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -36,6 +37,7 @@ interface HeaderProps {
   isOnline?: boolean;
   activeTakyidatCount?: number;
   onOpenTakyidat?: () => void;
+  onOpenSelectPoint?: () => void;
   onOpenAddModal: () => void;
   onOpenImportExport: () => void;
   onOpenMobileInstall: () => void;
@@ -78,6 +80,7 @@ export const Header: React.FC<HeaderProps> = ({
   isOnline = true,
   activeTakyidatCount = 0,
   onOpenTakyidat,
+  onOpenSelectPoint,
   onOpenAddModal,
   onOpenImportExport,
   onOpenMobileInstall,
@@ -322,6 +325,19 @@ export const Header: React.FC<HeaderProps> = ({
                     {activeTakyidatCount}
                   </span>
                 )}
+              </button>
+            )}
+
+            {/* Canlı Konum / Nokta Seç Butonu */}
+            {onOpenSelectPoint && (
+              <button
+                id="header-open-select-point-btn"
+                onClick={onOpenSelectPoint}
+                className="flex items-center gap-1.5 bg-sky-950/80 hover:bg-sky-900 border border-sky-500/50 text-sky-200 hover:text-white text-xs font-bold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer shadow-2xs"
+                title="Canlı Konum Belirle / Listeden veya Haritadan Nokta Seç"
+              >
+                <Compass className="w-3.5 h-3.5 text-sky-400" />
+                <span className="hidden md:inline">Konum Seç</span>
               </button>
             )}
 

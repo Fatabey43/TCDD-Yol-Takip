@@ -15,6 +15,7 @@ import {
   CloudUpload,
   FileText,
   Gauge,
+  Compass,
 } from 'lucide-react';
 
 interface MobileActionsDrawerProps {
@@ -26,6 +27,7 @@ interface MobileActionsDrawerProps {
   onOpenPalette: () => void;
   onOpenReports?: () => void;
   onOpenTakyidat?: () => void;
+  onOpenSelectPoint?: () => void;
   activeTakyidatCount?: number;
   onRefresh: () => void;
   onExportJSON: () => void;
@@ -43,6 +45,7 @@ export const MobileActionsDrawer: React.FC<MobileActionsDrawerProps> = ({
   onOpenPalette,
   onOpenReports,
   onOpenTakyidat,
+  onOpenSelectPoint,
   activeTakyidatCount = 0,
   onRefresh,
   onExportJSON,
@@ -197,6 +200,23 @@ export const MobileActionsDrawer: React.FC<MobileActionsDrawerProps> = ({
                   )}
                 </span>
                 <span className="text-[10px] text-red-300/80">KM Hız Tahditleri</span>
+              </div>
+            </button>
+          )}
+
+          {/* Canlı Konum / Nokta Seç */}
+          {onOpenSelectPoint && (
+            <button
+              onClick={() => {
+                onOpenSelectPoint();
+                onClose();
+              }}
+              className="flex items-center gap-2 p-3 bg-sky-950/80 hover:bg-sky-900 active:bg-sky-850 rounded-xl border border-sky-500/50 transition-all font-semibold text-sky-200"
+            >
+              <Compass className="w-4 h-4 text-sky-400" />
+              <div className="text-left leading-tight">
+                <span className="block font-bold">Canlı Konum Seç</span>
+                <span className="text-[10px] text-sky-300/80">Noktadan veya Haritadan</span>
               </div>
             </button>
           )}

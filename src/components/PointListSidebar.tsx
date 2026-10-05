@@ -4,7 +4,7 @@ import { CategoryColorConfig, DEFAULT_CATEGORY_COLORS, formatKmDisplay } from '.
 import { getTextStyleInline } from '../utils/textStyleHelper.ts';
 import { sortPointsByKm } from '../utils/kmUtils.ts';
 import { useAuth } from '../context/AuthContext.tsx';
-import { Navigation, MessageSquare, Image, Train, ChevronRight, MapPin, Trash2, Globe } from 'lucide-react';
+import { Navigation, MessageSquare, Image, Train, ChevronRight, MapPin, Trash2, Globe, X } from 'lucide-react';
 
 interface PointListSidebarProps {
   points: RailwayPoint[];
@@ -43,13 +43,24 @@ export const PointListSidebar: React.FC<PointListSidebarProps> = ({
             Kayıtlı Noktalar ({sortedPoints.length})
           </span>
         </div>
-        <span
-          className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200/80 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs"
-          title="KM chainage değerlerine göre düşükten yukarıya doğru sıralanmıştır"
-        >
-          <span>KM Sıralı</span>
-          <span className="text-[10px] text-blue-600 font-bold">↑</span>
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span
+            className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200/80 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs"
+            title="KM chainage değerlerine göre düşükten yukarıya doğru sıralanmıştır"
+          >
+            <span>KM Sıralı</span>
+            <span className="text-[10px] text-blue-600 font-bold">↑</span>
+          </span>
+          <button
+            id="close-sidebar-btn"
+            type="button"
+            onClick={onToggle}
+            className="p-1 text-slate-400 hover:text-slate-800 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+            title="Listeyi Kapat"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Points Scroll Area */}

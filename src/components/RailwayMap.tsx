@@ -10,7 +10,7 @@ import {
   LatLngPoint,
 } from '../utils/measurement.ts';
 import { parseKmToNumber } from '../utils/kmUtils.ts';
-import { Layers, Locate, Maximize2, Plus, Train, Ruler, RotateCcw, Undo2, Check, RotateCw, Globe, ExternalLink, MapPin, Crosshair, Gauge, AlertTriangle } from 'lucide-react';
+import { Layers, Locate, Maximize2, Plus, Train, Ruler, RotateCcw, Undo2, Check, RotateCw, Globe, ExternalLink, MapPin, Crosshair, Gauge, AlertTriangle, X } from 'lucide-react';
 
 interface RailwayMapProps {
   points: RailwayPoint[];
@@ -25,6 +25,13 @@ interface RailwayMapProps {
   isRefreshing?: boolean;
   takyidatRestrictions?: TakyidatSpeedRestriction[];
   onOpenTakyidat?: () => void;
+  isLivePointPickMode?: boolean;
+  onPickLivePoint?: (lat: number, lng: number) => void;
+  onCancelLivePointPick?: () => void;
+  isTakyidatPickMode?: 'start' | 'end' | 'both' | 'both-step2' | null;
+  onPickTakyidatPoint?: (lat: number, lng: number, pointKm?: string, pointTitle?: string, lineName?: string) => void;
+  onCancelTakyidatPick?: () => void;
+  liveGpsCoords?: { lat: number; lng: number } | null;
 }
 
 function createMarkerIcon(
@@ -82,6 +89,13 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
   isRefreshing,
   takyidatRestrictions = [],
   onOpenTakyidat,
+  isLivePointPickMode = false,
+  onPickLivePoint,
+  onCancelLivePointPick,
+  isTakyidatPickMode = null,
+  onPickTakyidatPoint,
+  onCancelTakyidatPick,
+  liveGpsCoords,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -108,6 +122,18 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 
   const onMapClickAddRef = useRef(onMapClickAdd);
   onMapClickAddRef.current = onMapClickAdd;
+
+  const isLivePointPickModeRef = useRef(isLivePointPickMode);
+  isLivePointPickModeRef.current = isLivePointPickMode;
+
+  const onPickLivePointRef = useRef(onPickLivePoint);
+  onPickLivePointRef.current = onPickLivePoint;
+
+  const isTakyidatPickModeRef = useRef(isTakyidatPickMode);
+  isTakyidatPickModeRef.current = isTakyidatPickMode;
+
+  const onPickTakyidatPointRef = useRef(onPickTakyidatPoint);
+  onPickTakyidatPointRef.current = onPickTakyidatPoint;
 
   const isMeasuringRef = useRef(isMeasuring);
   isMeasuringRef.current = isMeasuring;
@@ -189,6 +215,16 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 
     // Map click handler - strictly accesses current values via refs to avoid stale closure
     map.on('click', (e: L.LeafletMouseEvent) => {
+      if (isTakyidatPickModeRef.current && onPickTakyidatPointRef.current) {
+        onPickTakyidatPointRef.current(e.latlng.lat, e.latlng.lng);
+        return;
+      }
+
+      if (isLivePointPickModeRef.current && onPickLivePointRef.current) {
+        onPickLivePointRef.current(e.latlng.lat, e.latlng.lng);
+        return;
+      }
+
       if (isMeasuringRef.current) {
         setMeasurePoints((prev) => [...prev, { lat: e.latlng.lat, lng: e.latlng.lng }]);
         return;
@@ -243,7 +279,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 
     const container = map.getContainer();
     if (container) {
-      if (isAddMode || isMeasuring) {
+      if (isAddMode || isMeasuring || isLivePointPickMode || !!isTakyidatPickMode) {
         container.style.cursor = 'crosshair';
       } else {
         container.style.cursor = '';
@@ -256,7 +292,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
     }, 50);
 
     return () => clearTimeout(timer);
-  }, [isAddMode, isMeasuring]);
+  }, [isAddMode, isMeasuring, isLivePointPickMode, isTakyidatPickMode]);
 
   // Update map layer when mapType changes
   useEffect(() => {
@@ -473,6 +509,14 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 
       marker.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
+        if (isTakyidatPickModeRef.current && onPickTakyidatPointRef.current) {
+          onPickTakyidatPointRef.current(point.lat, point.lng, point.kmValue, point.title, point.lineName);
+          return;
+        }
+        if (isLivePointPickModeRef.current && onPickLivePointRef.current) {
+          onPickLivePointRef.current(point.lat, point.lng);
+          return;
+        }
         // If measuring, allow snapping this point into measurement
         if (isMeasuringRef.current) {
           setMeasurePoints((prev) => [...prev, { lat: point.lat, lng: point.lng }]);
@@ -755,6 +799,32 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 
   const isGoogleEarthActive = mapType === 'google-earth' || mapType === 'google-satellite';
 
+  // Synchronize user marker with liveGpsCoords when available
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !liveGpsCoords) return;
+
+    const { lat, lng } = liveGpsCoords;
+    if (userMarkerRef.current) {
+      userMarkerRef.current.setLatLng([lat, lng]);
+    } else {
+      const userIcon = L.divIcon({
+        html: `
+          <div class="relative flex items-center justify-center">
+            <div class="absolute -inset-2.5 rounded-full bg-blue-500/30 animate-ping"></div>
+            <div class="w-4 h-4 bg-blue-600 rounded-full border-2 border-white shadow-md ring-2 ring-blue-400"></div>
+          </div>
+        `,
+        className: 'user-location-marker',
+        iconSize: [16, 16],
+      });
+
+      userMarkerRef.current = L.marker([lat, lng], { icon: userIcon })
+        .bindTooltip('Canlı Konumunuz (GPS / Seçilen)', { permanent: false })
+        .addTo(map);
+    }
+  }, [liveGpsCoords]);
+
   return (
     <div className="relative w-full h-full">
       {/* Map Container */}
@@ -763,6 +833,64 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
         ref={mapContainerRef}
         className="w-full h-full z-0"
       />
+
+      {/* Mode Banner when Takyidat Pick Mode is Active */}
+      {isTakyidatPickMode && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-gradient-to-r from-red-700 via-amber-600 to-red-800 text-white px-5 py-3 rounded-2xl font-bold text-xs sm:text-sm shadow-2xl flex items-center gap-3 border-2 border-amber-300 ring-4 ring-red-500/20 animate-in fade-in slide-in-from-top-4 duration-200 max-w-[95vw]">
+          <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+            <Gauge className="w-5 h-5 text-white animate-pulse" />
+          </div>
+          <div className="flex flex-col text-left">
+            <span className="text-[13px] sm:text-sm font-extrabold text-white leading-tight">
+              {isTakyidatPickMode === 'start' && 'Takyidat Başlangıç KM için demiryoluna veya noktaya tıklayın'}
+              {isTakyidatPickMode === 'end' && 'Takyidat Bitiş KM için demiryoluna veya noktaya tıklayın'}
+              {isTakyidatPickMode === 'both' && '1. Aşama: Başlangıç KM için haritaya dokunun'}
+              {isTakyidatPickMode === 'both-step2' && '2. Aşama: Bitiş KM için haritada ikinci noktaya dokunun'}
+            </span>
+            <span className="text-[11px] font-medium text-amber-100 opacity-95">
+              Tıkladığınız yerin demiryolu KM değeri hesaplanıp Takyidat formuna otomatik işlenecektir
+            </span>
+          </div>
+          {onCancelTakyidatPick && (
+            <button
+              id="cancel-takyidat-pick-btn"
+              type="button"
+              onClick={onCancelTakyidatPick}
+              className="ml-2 bg-slate-950/80 hover:bg-slate-950 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer whitespace-nowrap flex items-center gap-1 border border-white/20"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Vazgeç</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Mode Banner when Live Point Pick Mode is Active */}
+      {isLivePointPickMode && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-gradient-to-r from-sky-600 to-blue-700 text-white px-5 py-3 rounded-2xl font-bold text-xs sm:text-sm shadow-2xl flex items-center gap-3 border-2 border-sky-300 ring-4 ring-sky-500/20 animate-in fade-in slide-in-from-top-4 duration-200">
+          <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+            <Crosshair className="w-5 h-5 text-white animate-spin" style={{ animationDuration: '6s' }} />
+          </div>
+          <div className="flex flex-col text-left">
+            <span className="text-[13px] sm:text-sm font-extrabold text-white leading-tight">
+              Canlı Konum İçin Haritada Bir Yere Dokunun
+            </span>
+            <span className="text-[11px] font-medium text-sky-100 opacity-90">
+              Dokunduğunuz noktanın koordinatı canlı saha konumu olarak belirlenecektir
+            </span>
+          </div>
+          {onCancelLivePointPick && (
+            <button
+              id="cancel-live-pick-btn"
+              type="button"
+              onClick={onCancelLivePointPick}
+              className="ml-2 bg-slate-950/80 hover:bg-slate-950 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer whitespace-nowrap"
+            >
+              Kapat
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Mode Banner when Add Mode is Active */}
       {isAddMode && (

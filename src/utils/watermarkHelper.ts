@@ -1,5 +1,5 @@
-import { RailwayPoint } from './types.ts';
-import { RailwayWatermarkOptions } from './utils/imageCompressor.ts';
+import { RailwayPoint } from '../types.ts';
+import { RailwayWatermarkOptions } from './imageCompressor.ts';
 
 export function getWatermarkOptionsForPoint(point: RailwayPoint, takenAt?: string): RailwayWatermarkOptions {
   let extraDetails = '';

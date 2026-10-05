@@ -40,6 +40,7 @@ import {
   Wrench,
   Gauge,
   AlertTriangle,
+  Compass,
 } from 'lucide-react';
 
 interface PointDetailDrawerProps {
@@ -57,6 +58,7 @@ interface PointDetailDrawerProps {
   onOpenWorkLogs?: (point: RailwayPoint) => void;
   takyidatRestrictions?: TakyidatSpeedRestriction[];
   onOpenTakyidat?: () => void;
+  onSelectLiveLocation?: (point: RailwayPoint) => void;
 }
 
 const CATEGORY_NAMES: Record<string, string> = {
@@ -127,6 +129,7 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
   onOpenWorkLogs,
   takyidatRestrictions = [],
   onOpenTakyidat,
+  onSelectLiveLocation,
 }) => {
   const { user, isAdmin, canAddNote, canAddPhoto, canDelete } = useAuth();
   // On mobile screens, start in compact mode so map remains visible and screen isn't crowded!
@@ -511,6 +514,19 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
               >
                 {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
+
+              {/* Bu Noktayı Canlı Konum / Referans Olarak Seç Butonu */}
+              {onSelectLiveLocation && (
+                <button
+                  id="drawer-set-live-location-btn"
+                  onClick={() => onSelectLiveLocation(point)}
+                  title="Bu Noktayı Canlı Konum Olarak Seç ve Canlı KM Cetvelinde Göster"
+                  className="flex items-center gap-1 px-2 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-300 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs"
+                >
+                  <Compass className="w-3.5 h-3.5 text-sky-600" />
+                  <span className="hidden sm:inline">Canlı Konum Yap</span>
+                </button>
+              )}
 
               {/* Yapılan İşler & Bakım Defteri Butonu */}
               {onOpenWorkLogs && (

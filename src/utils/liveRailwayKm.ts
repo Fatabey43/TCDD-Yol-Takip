@@ -27,7 +27,9 @@ function getHaversineDistanceMeters(lat1: number, lon1: number, lat2: number, lo
 }
 
 /**
- * Projects a point P onto segment AB and returns closest point coordinates and projection t (0..1)
+ * Projects point P onto line segment AB on the Earth's surface using
+ * equirectangular projection (converting lat/lng to metric coordinates centered at A),
+ * and returns the closest projected point, distance in meters, and interpolation parameter t (0..1).
  */
 function projectPointOnSegment(
   pLat: number,
@@ -37,18 +39,28 @@ function projectPointOnSegment(
   bLat: number,
   bLng: number
 ): { lat: number; lng: number; t: number; distMeters: number } {
-  const dx = bLng - aLng;
-  const dy = bLat - aLat;
-  const lenSq = dx * dx + dy * dy;
+  const R = 6371e3; // Earth radius in meters
+  const meanLatRad = (((aLat + bLat + pLat) / 3) * Math.PI) / 180;
+  const cosMeanLat = Math.cos(meanLatRad);
+
+  // Convert A, B, and P to local Cartesian meters relative to A (x = east, y = north)
+  const degToRad = Math.PI / 180;
+  const xB = (bLng - aLng) * degToRad * R * cosMeanLat;
+  const yB = (bLat - aLat) * degToRad * R;
+
+  const xP = (pLng - aLng) * degToRad * R * cosMeanLat;
+  const yP = (pLat - aLat) * degToRad * R;
+
+  const lenSq = xB * xB + yB * yB;
 
   let t = 0;
   if (lenSq > 0) {
-    t = ((pLng - aLng) * dx + (pLat - aLat) * dy) / lenSq;
+    t = (xP * xB + yP * yB) / lenSq;
     t = Math.max(0, Math.min(1, t));
   }
 
-  const projLat = aLat + t * dy;
-  const projLng = aLng + t * dx;
+  const projLat = aLat + t * (bLat - aLat);
+  const projLng = aLng + t * (bLng - aLng);
   const distMeters = getHaversineDistanceMeters(pLat, pLng, projLat, projLng);
 
   return { lat: projLat, lng: projLng, t, distMeters };

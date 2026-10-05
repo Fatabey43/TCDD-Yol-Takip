@@ -26,7 +26,8 @@ import { ImportExportModal } from './components/ImportExportModal.tsx';
 import { MobileInstallModal } from './components/MobileInstallModal.tsx';
 import { ReportModal } from './components/ReportModal.tsx';
 import { WorkLogModal } from './components/WorkLogModal.tsx';
-import { TakyidatModal } from './components/TakyidatModal.tsx';
+import { TakyidatModal, TakyidatFormDraft } from './components/TakyidatModal.tsx';
+import { SelectPointModal } from './components/SelectPointModal.tsx';
 import { LiveKmIndicator } from './components/LiveKmIndicator.tsx';
 import { calculateLiveRailwayKm, NearestKmResult } from './utils/liveRailwayKm.ts';
 import { WorkLog, TakyidatSpeedRestriction } from './types.ts';
@@ -46,8 +47,9 @@ import {
   loadCategoryColors,
   saveCategoryColors,
   DEFAULT_CATEGORY_COLORS,
+  formatKmDisplay,
 } from './utils/categoryColors.ts';
-import { sortPointsByKm, upsertPointInKmOrder } from './utils/kmUtils.ts';
+import { sortPointsByKm, upsertPointInKmOrder, parseKmToNumber } from './utils/kmUtils.ts';
 import { getStoredLines } from './utils/customLinesStorage.ts';
 import { List, Map as MapIcon, Loader2, Plus, Wifi, Smartphone, X } from 'lucide-react';
 import { TrainLoadingAnimation } from './components/TrainLoadingAnimation.tsx';
@@ -72,7 +74,7 @@ export default function App() {
   const [isUserMgmtOpen, setIsUserMgmtOpen] = useState<boolean>(false);
   const [editingPoint, setEditingPoint] = useState<RailwayPoint | null>(null);
   const [clickCoords, setClickCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [measureInitialPoint, setMeasureInitialPoint] = useState<{ lat: number; lng: number } | null>(null);
+  const [measureInitialPoint, setMeasureInitialPoint] = useState<{ lat: number; lng: number; label?: string } | null>(null);
   const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
   const [prevUser, setPrevUser] = useState<any>(user);
   const [isImportExportOpen, setIsImportExportOpen] = useState<boolean>(false);
@@ -81,12 +83,17 @@ export default function App() {
   const [workLogPoint, setWorkLogPoint] = useState<RailwayPoint | null>(null);
   const [isTakyidatModalOpen, setIsTakyidatModalOpen] = useState<boolean>(false);
   const [takyidatList, setTakyidatList] = useState<TakyidatSpeedRestriction[]>([]);
+  const [takyidatPickMode, setTakyidatPickMode] = useState<'start' | 'end' | 'both' | 'both-step2' | null>(null);
+  const [takyidatFormDraft, setTakyidatFormDraft] = useState<TakyidatFormDraft | null>(null);
   
   // Live GPS KM State
   const [liveGpsCoords, setLiveGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [nearestRailwayKm, setNearestRailwayKm] = useState<NearestKmResult | null>(null);
   const [isLiveGpsActive, setIsLiveGpsActive] = useState<boolean>(false);
   const [isGpsLocating, setIsGpsLocating] = useState<boolean>(false);
+  const [isSelectPointModalOpen, setIsSelectPointModalOpen] = useState<boolean>(false);
+  const [isLivePointPickMode, setIsLivePointPickMode] = useState<boolean>(false);
+  const [manualLivePointTitle, setManualLivePointTitle] = useState<string | null>(null);
 
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallBannerDismissed, setIsInstallBannerDismissed] = useState<boolean>(() => {
@@ -772,7 +779,7 @@ export default function App() {
     showToast('İş kaydı silindi.');
   };
 
-  // Live GPS KM Tracking Handler
+  // Live GPS KM Tracking Handler with high accuracy and low-latency fallback
   const handleRefreshGps = useCallback(() => {
     if (!navigator.geolocation) {
       showToast('Cihazınızda GPS / Konum servisi desteklenmiyor.');
@@ -780,6 +787,9 @@ export default function App() {
     }
 
     setIsGpsLocating(true);
+    setManualLivePointTitle(null);
+
+    // Try high-accuracy first
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setIsGpsLocating(false);
@@ -789,17 +799,77 @@ export default function App() {
         const kmResult = calculateLiveRailwayKm(coords.lat, coords.lng, points);
         setNearestRailwayKm(kmResult);
         if (kmResult) {
-          showToast(`Canlı Konum: KM ${kmResult.chainageKm} (${kmResult.distanceToRailMeters}m mesafe)`);
+          showToast(`Canlı GPS Konumu: KM ${kmResult.chainageKm} (Hassasiyet: ±${Math.round(pos.coords.accuracy || 10)}m)`);
         }
       },
       (err) => {
-        setIsGpsLocating(false);
-        console.warn('GPS hatası:', err);
-        showToast('Canlı GPS konumu alınamadı. Lütfen konum iznini kontrol edin.');
+        console.warn('GPS yüksek doğruluk zaman aşımına uğradı, standart mod deneniyor:', err);
+        // Fallback with lower accuracy if high accuracy timed out or failed
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            setIsGpsLocating(false);
+            setIsLiveGpsActive(true);
+            const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            setLiveGpsCoords(coords);
+            const kmResult = calculateLiveRailwayKm(coords.lat, coords.lng, points);
+            setNearestRailwayKm(kmResult);
+            if (kmResult) {
+              showToast(`Canlı Konum Alındı: KM ${kmResult.chainageKm}`);
+            }
+          },
+          (errFallback) => {
+            setIsGpsLocating(false);
+            console.warn('GPS hatası:', errFallback);
+            showToast('Canlı GPS konumu alınamadı. "Nokta Seç" butonuna basarak haritadan veya listeden de seçebilirsiniz.');
+          },
+          { enableHighAccuracy: false, timeout: 12000, maximumAge: 10000 }
+        );
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     );
   }, [points]);
+
+  // Select a registered point as the live reference point
+  const handleSelectPointAsLive = useCallback((point: RailwayPoint) => {
+    setIsLivePointPickMode(false);
+    setLiveGpsCoords({ lat: point.lat, lng: point.lng });
+    setManualLivePointTitle(point.title);
+    setIsLiveGpsActive(true);
+
+    const kmResult = calculateLiveRailwayKm(point.lat, point.lng, points);
+    setNearestRailwayKm(kmResult);
+
+    if (viewMode === 'list') {
+      setViewMode('map');
+      setActiveTab('map');
+    }
+
+    showToast(`"${point.title}" canlı saha referans noktası olarak seçildi (KM ${kmResult?.chainageKm || point.kmValue || '?'}).`);
+  }, [points, viewMode]);
+
+  // Start map clicking mode to select any free point on the map as live location
+  const handleStartPickLiveOnMap = () => {
+    setIsLivePointPickMode(true);
+    setIsAddMode(false);
+    if (viewMode === 'list') {
+      setViewMode('map');
+      setActiveTab('map');
+    }
+    showToast('Haritada canlı konum olarak belirlemek istediğiniz noktaya dokunun.');
+  };
+
+  // Called when user clicks on map during isLivePointPickMode
+  const handleMapClickPickLivePoint = (lat: number, lng: number) => {
+    setIsLivePointPickMode(false);
+    setLiveGpsCoords({ lat, lng });
+    setIsLiveGpsActive(true);
+
+    const kmResult = calculateLiveRailwayKm(lat, lng, points);
+    setNearestRailwayKm(kmResult);
+    setManualLivePointTitle(`Haritada Seçilen Konum (${lat.toFixed(5)}, ${lng.toFixed(5)})`);
+
+    showToast(`Haritadan canlı konum seçildi: KM ${kmResult?.chainageKm || 'Hesaplandı'} (${kmResult?.distanceToRailMeters || 0}m raya mesafe)`);
+  };
 
   // Pan map to live GPS location
   const handlePanToMyGps = () => {
@@ -887,6 +957,135 @@ export default function App() {
     showToast(`KM ${startKmNum}+000 ➔ ${endKmNum}+000 takyidat hız kısıtlaması kesimine odaklanıldı.`);
   };
 
+  // Takyidat Map Pick Handlers (Haritadan Seçme Özelliği)
+  const handleStartTakyidatPickOnMap = (target: 'start' | 'end' | 'both', draft: TakyidatFormDraft) => {
+    setTakyidatFormDraft(draft);
+    setTakyidatPickMode(target);
+    setIsTakyidatModalOpen(false);
+    if (viewMode === 'list') {
+      setViewMode('map');
+      setActiveTab('map');
+    }
+    if (target === 'start') {
+      showToast('⚠️ Takyidat Başlangıç KM için haritada demiryoluna veya bir noktaya dokunun.');
+    } else if (target === 'end') {
+      showToast('⚠️ Takyidat Bitiş KM için haritada demiryoluna veya bir noktaya dokunun.');
+    } else {
+      showToast('⚠️ Takyidat Başlangıç KM için 1. noktaya dokunun.');
+    }
+  };
+
+  const handlePickTakyidatOnMap = (
+    lat: number,
+    lng: number,
+    pointKm?: string,
+    pointTitle?: string,
+    lineName?: string
+  ) => {
+    let selectedKm: string;
+    let selectedLine: string | undefined = lineName;
+
+    if (pointKm) {
+      selectedKm = formatKmDisplay(pointKm, pointTitle) || pointKm;
+    } else {
+      const kmResult = calculateLiveRailwayKm(lat, lng, points);
+      selectedKm = kmResult?.chainageKm || '0+000';
+      if (!selectedLine && kmResult?.lineName) {
+        selectedLine = kmResult.lineName;
+      }
+    }
+
+    if (takyidatPickMode === 'start') {
+      setTakyidatFormDraft((prev) => ({
+        ...(prev || {
+          startKm: '',
+          endKm: '',
+          speedLimit: 30,
+          normalSpeed: 120,
+          lineName: availableLines[0] || 'Eskişehir-Konya',
+          reason: '',
+          status: 'active',
+          trackType: 'both',
+          noticeNo: '',
+          issuedBy: '712 Yol Bakım Şefliği',
+          notes: '',
+        }),
+        startKm: selectedKm,
+        lineName: selectedLine || prev?.lineName || availableLines[0] || 'Eskişehir-Konya',
+      }));
+      setTakyidatPickMode(null);
+      setIsTakyidatModalOpen(true);
+      showToast(`Takyidat Başlangıç KM: ${selectedKm} haritadan seçildi.`);
+    } else if (takyidatPickMode === 'end') {
+      setTakyidatFormDraft((prev) => ({
+        ...(prev || {
+          startKm: '',
+          endKm: '',
+          speedLimit: 30,
+          normalSpeed: 120,
+          lineName: availableLines[0] || 'Eskişehir-Konya',
+          reason: '',
+          status: 'active',
+          trackType: 'both',
+          noticeNo: '',
+          issuedBy: '712 Yol Bakım Şefliği',
+          notes: '',
+        }),
+        endKm: selectedKm,
+      }));
+      setTakyidatPickMode(null);
+      setIsTakyidatModalOpen(true);
+      showToast(`Takyidat Bitiş KM: ${selectedKm} haritadan seçildi.`);
+    } else if (takyidatPickMode === 'both') {
+      setTakyidatFormDraft((prev) => ({
+        ...(prev || {
+          startKm: '',
+          endKm: '',
+          speedLimit: 30,
+          normalSpeed: 120,
+          lineName: availableLines[0] || 'Eskişehir-Konya',
+          reason: '',
+          status: 'active',
+          trackType: 'both',
+          noticeNo: '',
+          issuedBy: '712 Yol Bakım Şefliği',
+          notes: '',
+        }),
+        startKm: selectedKm,
+        lineName: selectedLine || prev?.lineName || availableLines[0] || 'Eskişehir-Konya',
+      }));
+      setTakyidatPickMode('both-step2');
+      showToast(`Başlangıç KM ${selectedKm} seçildi. Şimdi Bitiş KM için 2. noktaya tıklayın.`);
+    } else if (takyidatPickMode === 'both-step2') {
+      const startVal = takyidatFormDraft?.startKm || '';
+      setTakyidatFormDraft((prev) => ({
+        ...(prev || {
+          startKm: '',
+          endKm: '',
+          speedLimit: 30,
+          normalSpeed: 120,
+          lineName: availableLines[0] || 'Eskişehir-Konya',
+          reason: '',
+          status: 'active',
+          trackType: 'both',
+          noticeNo: '',
+          issuedBy: '712 Yol Bakım Şefliği',
+          notes: '',
+        }),
+        endKm: selectedKm,
+      }));
+      setTakyidatPickMode(null);
+      setIsTakyidatModalOpen(true);
+      showToast(`Takyidat aralığı seçildi: KM ${startVal} ➔ KM ${selectedKm}.`);
+    }
+  };
+
+  const handleCancelTakyidatPick = () => {
+    setTakyidatPickMode(null);
+    setIsTakyidatModalOpen(true);
+    showToast('Haritadan Takyidat seçimi iptal edildi.');
+  };
+
   // If verifying session
   if (authLoading) {
     return (
@@ -935,6 +1134,7 @@ export default function App() {
         isOnline={isOnline}
         activeTakyidatCount={takyidatList.filter((r) => r.status === 'active').length}
         onOpenTakyidat={() => setIsTakyidatModalOpen(true)}
+        onOpenSelectPoint={() => setIsSelectPointModalOpen(true)}
         onOpenAddModal={handleOpenAddModal}
         onOpenImportExport={() => setIsImportExportOpen(true)}
         onOpenMobileInstall={() => setIsMobileInstallOpen(true)}
@@ -1020,6 +1220,13 @@ export default function App() {
                 isRefreshing={isRefreshing}
                 takyidatRestrictions={takyidatList}
                 onOpenTakyidat={() => setIsTakyidatModalOpen(true)}
+                isLivePointPickMode={isLivePointPickMode}
+                onPickLivePoint={handleMapClickPickLivePoint}
+                onCancelLivePointPick={() => setIsLivePointPickMode(false)}
+                isTakyidatPickMode={takyidatPickMode}
+                onPickTakyidatPoint={handlePickTakyidatOnMap}
+                onCancelTakyidatPick={handleCancelTakyidatPick}
+                liveGpsCoords={liveGpsCoords}
               />
 
               {/* Toggle Sidebar Button for Desktop */}
@@ -1055,6 +1262,7 @@ export default function App() {
             onOpenWorkLogs={(pt) => setWorkLogPoint(pt)}
             takyidatRestrictions={takyidatList}
             onOpenTakyidat={() => setIsTakyidatModalOpen(true)}
+            onSelectLiveLocation={handleSelectPointAsLive}
             onPanToPoint={(pt) => {
               setSelectedPoint(pt);
               if (viewMode === 'list') {
@@ -1073,6 +1281,15 @@ export default function App() {
         isLocating={isGpsLocating}
         onRefreshGps={handleRefreshGps}
         onPanToMyLocation={handlePanToMyGps}
+        onOpenSelectPoint={() => setIsSelectPointModalOpen(true)}
+        onClose={() => {
+          setLiveGpsCoords(null);
+          setNearestRailwayKm(null);
+          setIsLiveGpsActive(false);
+          setManualLivePointTitle(null);
+        }}
+        isManualPointMode={Boolean(manualLivePointTitle)}
+        selectedPointTitle={manualLivePointTitle}
       />
 
       {/* Point Add Method Choice Modal */}
@@ -1182,6 +1399,7 @@ export default function App() {
         onOpenPalette={() => setActiveTab('palette')}
         onOpenReports={() => setIsReportModalOpen(true)}
         onOpenTakyidat={() => setIsTakyidatModalOpen(true)}
+        onOpenSelectPoint={() => setIsSelectPointModalOpen(true)}
         activeTakyidatCount={takyidatList.filter((r) => r.status === 'active').length}
         onRefresh={handleRefresh}
         onExportJSON={handleExportJSON}
@@ -1195,11 +1413,25 @@ export default function App() {
         isOpen={isTakyidatModalOpen}
         onClose={() => setIsTakyidatModalOpen(false)}
         restrictions={takyidatList}
+        points={points}
         onAddRestriction={handleAddTakyidat}
         onUpdateRestriction={handleUpdateTakyidat}
         onDeleteRestriction={handleDeleteTakyidat}
         onFocusSegment={handleFocusTakyidatSegment}
         availableLines={availableLines}
+        onStartPickOnMap={handleStartTakyidatPickOnMap}
+        initialDraft={takyidatFormDraft}
+        onDraftConsumed={() => setTakyidatFormDraft(null)}
+      />
+
+      {/* Canlı Konum İçin Nokta Seçme Modalı */}
+      <SelectPointModal
+        isOpen={isSelectPointModalOpen}
+        onClose={() => setIsSelectPointModalOpen(false)}
+        points={points}
+        onSelectPointAsLive={handleSelectPointAsLive}
+        onStartPickOnMap={handleStartPickLiveOnMap}
+        currentLiveKm={nearestRailwayKm?.chainageKm}
       />
 
       {/* TCDD Resmi Raporlar Modalı (Menfez, Geçit, Yapılan İşler) */}

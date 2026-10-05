@@ -234,7 +234,7 @@ export function parseRowObject(row: Record<string, any>, index: number, defaultL
       dailyTrainCount: dailyTrain ? String(dailyTrain).trim() : undefined,
       clearanceWidth: clearance ? String(clearance).trim() : undefined,
       skewAngle: skewAngle ? String(skewAngle).trim() : undefined,
-      intersectedTrackCount: intersectedTrack ? String(intersectedTrackCount).trim() : undefined,
+      intersectedTrackCount: intersectedTrack ? String(intersectedTrack).trim() : undefined,
       minSightDistance: minSight ? String(minSight).trim() : undefined,
       railwayGradient: railwayGradient ? String(railwayGradient).trim() : undefined,
       curveInfo: curveInfo ? String(curveInfo).trim() : undefined,
