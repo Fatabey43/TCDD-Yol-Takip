@@ -1,4 +1,4 @@
-const CACHE_NAME = 'demiryolu-km-v4';
+const CACHE_NAME = 'demiryolu-km-v5';
 const TILE_CACHE_NAME = 'demiryolu-km-tiles-v1';
 
 const STATIC_ASSETS = [
