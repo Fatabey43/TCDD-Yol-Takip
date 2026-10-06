@@ -213,19 +213,20 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSuccessToast }) => {
           {activeTab === 'login' ? (
             <form onSubmit={handleLoginSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  E-posta Adresi
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
+                  <span>E-posta veya Kullanıcı Adı</span>
+                  <span className="text-[10px] text-purple-400 font-mono">hassan34</span>
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     id="login-email-input"
-                    type="email"
+                    type="text"
                     required
                     autoFocus
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="ornek@tcdd.gov.tr veya mailiniz"
+                    placeholder="hassan34 veya turkmenhassan34@gmail.com"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500 transition-all"
                   />
                 </div>
@@ -287,21 +288,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSuccessToast }) => {
                   <button
                     type="button"
                     onClick={() => {
-                      setLoginEmail('bahadirefet@gmail.com');
+                      setLoginEmail('hassan34');
                       setLoginPassword('demiryolu123');
                     }}
                     className="p-2 bg-slate-950/80 hover:bg-slate-800 border border-purple-500/40 hover:border-purple-400 rounded-xl text-left transition-all cursor-pointer group"
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-purple-300 flex items-center gap-1">
-                        👑 Bahadır Efet
+                        👑 Hasan Polat (hassan34)
                       </span>
-                      <span className="text-[9px] bg-purple-900/60 text-purple-200 px-1 rounded">Yönetici</span>
+                      <span className="text-[9px] bg-purple-900/60 text-purple-200 px-1 rounded font-bold">Yönetici</span>
                     </div>
-                    <span className="text-[10px] text-slate-400 font-mono block truncate">
-                      bahadirefet@gmail.com
+                    <span className="text-[10px] text-purple-200/90 font-mono block truncate">
+                      hassan34
                     </span>
-                    <span className="text-[10px] text-slate-500 font-mono">Şifre: demiryolu123</span>
+                    <span className="text-[10px] text-slate-400 font-mono">Şifre: demiryolu123</span>
                   </button>
 
                   <button
