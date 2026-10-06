@@ -582,10 +582,17 @@ app.post('/api/auth/login', (req, res) => {
     });
   }
 
-  const isPasswordCorrect = verifyPassword(password, user.passwordSalt, user.passwordHash);
-  const isMasterAdminPass = (user.role === 'admin' || user.email === 'turkmenhassan34@gmail.com' || user.email === 'bahadirefet@gmail.com') && (password === 'demiryolu123' || password === 'saha123');
-  const isDefaultEditorPass = user.role === 'editor' && password === 'saha123';
-  const isDefaultViewerPass = user.role === 'viewer' && password === 'izleyici123';
+  const trimmedPassword = (password || '').trim();
+  const isPasswordCorrect =
+    verifyPassword(password, user.passwordSalt, user.passwordHash) ||
+    verifyPassword(trimmedPassword, user.passwordSalt, user.passwordHash);
+  const isMasterAdminPass =
+    (user.role === 'admin' || user.email === 'turkmenhassan34@gmail.com' || user.email === 'bahadirefet@gmail.com') &&
+    (password === 'demiryolu123' || trimmedPassword === 'demiryolu123' || password === 'saha123' || trimmedPassword === 'saha123');
+  const isDefaultEditorPass =
+    user.role === 'editor' && (password === 'saha123' || trimmedPassword === 'saha123');
+  const isDefaultViewerPass =
+    user.role === 'viewer' && (password === 'izleyici123' || trimmedPassword === 'izleyici123');
 
   if (!isPasswordCorrect && !isMasterAdminPass && !isDefaultEditorPass && !isDefaultViewerPass) {
     recordAuditLog({

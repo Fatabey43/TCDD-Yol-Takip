@@ -5,10 +5,10 @@
     "email": "turkmenhassan34@gmail.com",
     "role": "admin",
     "department": "TCDD Sistem Yöneticisi / Saha Sorumlusu",
-    "passwordSalt": "83452f6dd690a7a0333c3de38e6372a2",
-    "passwordHash": "748366d19f324b92e1d386ca89bbbb7fc25e69b9ea740215311ee4f88ab236d13b7aff7bf42dea8175b1cf39d8d9b18bd83ce4a2282373a59584e7630ecb14db",
+    "passwordSalt": "8a23b0d7070fbd824df932f65d223a95",
+    "passwordHash": "802b2ef9e8b048e66216880fcbb4512c9172e847f7aeb8e8c830c8738e848852e7a7ec99f86f3398afb62d098d5b280290320f9cb9ef5f843207a05622c54391",
     "createdAt": "2026-09-21T14:40:39.732Z",
-    "lastLoginAt": "2026-09-25T21:23:01.931Z"
+    "lastLoginAt": "2026-10-06T19:43:04.552Z"
   },
   {
     "id": "usr-editor-2",
@@ -41,6 +41,6 @@
     "passwordSalt": "62972867bced5a031a85981d204d0885",
     "passwordHash": "ad1e234c0e808166241aa3b5e5574532d7d2617e6c4ead25d37c9c43df1a5e715c7714009c0a60fce7fc86afbcbcc09098db647d0edbee12ec54dcad25d3d3f0",
     "createdAt": "2026-09-25T21:37:31.029Z",
-    "lastLoginAt": "2026-09-25T21:37:33.073Z"
+    "lastLoginAt": "2026-10-06T20:04:02.931Z"
   }
 ]

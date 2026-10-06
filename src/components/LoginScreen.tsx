@@ -278,7 +278,55 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSuccessToast }) => {
                 )}
               </button>
 
-              <div className="pt-2 text-center">
+              {/* Hızlı Giriş & Tanımlı Hesaplar Kartı */}
+              <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                <span className="text-[11px] font-bold text-slate-400 block">
+                  ⚡ Hızlı Tek Tıkla Giriş:
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginEmail('bahadirefet@gmail.com');
+                      setLoginPassword('demiryolu123');
+                    }}
+                    className="p-2 bg-slate-950/80 hover:bg-slate-800 border border-purple-500/40 hover:border-purple-400 rounded-xl text-left transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-purple-300 flex items-center gap-1">
+                        👑 Bahadır Efet
+                      </span>
+                      <span className="text-[9px] bg-purple-900/60 text-purple-200 px-1 rounded">Yönetici</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono block truncate">
+                      bahadirefet@gmail.com
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-mono">Şifre: demiryolu123</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginEmail('saha@tcdd.gov.tr');
+                      setLoginPassword('saha123');
+                    }}
+                    className="p-2 bg-slate-950/80 hover:bg-slate-800 border border-sky-500/40 hover:border-sky-400 rounded-xl text-left transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-sky-300 flex items-center gap-1">
+                        🛠️ Saha Personeli
+                      </span>
+                      <span className="text-[9px] bg-sky-900/60 text-sky-200 px-1 rounded">Saha</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono block truncate">
+                      saha@tcdd.gov.tr
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-mono">Şifre: saha123</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-1 text-center">
                 <button
                   type="button"
                   onClick={() => {

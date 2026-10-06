@@ -1,5 +1,47 @@
 [
   {
+    "id": "log-1791317042932-hfvi",
+    "timestamp": "2026-10-06T20:04:02.932Z",
+    "action": "GİRİŞ_BAŞARILI",
+    "email": "bahadirefet@gmail.com",
+    "userName": "Bahadır Efet",
+    "role": "admin",
+    "status": "success",
+    "details": "Bahadır Efet (Yönetici) oturum açtı",
+    "ip": "127.0.0.1"
+  },
+  {
+    "id": "log-1791315784553-i9dr",
+    "timestamp": "2026-10-06T19:43:04.553Z",
+    "action": "GİRİŞ_BAŞARILI",
+    "email": "turkmenhassan34@gmail.com",
+    "userName": "Hasan Polat Türkmen",
+    "role": "admin",
+    "status": "success",
+    "details": "Hasan Polat Türkmen (Yönetici) oturum açtı",
+    "ip": "88.253.44.206, 169.254.169.126"
+  },
+  {
+    "id": "log-1791315292942-exqw",
+    "timestamp": "2026-10-06T19:34:52.942Z",
+    "action": "ŞİFRE_SIFIRLANDI",
+    "email": "turkmenhassan34@gmail.com",
+    "userName": "Hasan Polat Türkmen",
+    "role": "admin",
+    "status": "warning",
+    "details": "Hasan Polat Türkmen (turkmenhassan34@gmail.com) kullanıcısının şifresi yönetici tarafından güncellendi"
+  },
+  {
+    "id": "log-1791315160437-q7hs",
+    "timestamp": "2026-10-06T19:32:40.437Z",
+    "action": "ŞİFRE_SIFIRLANDI",
+    "email": "turkmenhassan34@gmail.com",
+    "userName": "Hasan Polat Türkmen",
+    "role": "admin",
+    "status": "warning",
+    "details": "Hasan Polat Türkmen (turkmenhassan34@gmail.com) kullanıcısının şifresi yönetici tarafından güncellendi"
+  },
+  {
     "id": "log-1790372260542-w1ct",
     "timestamp": "2026-09-25T21:37:40.542Z",
     "action": "GİRİŞ_BAŞARISIZ",
