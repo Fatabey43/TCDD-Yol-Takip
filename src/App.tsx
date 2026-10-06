@@ -16,6 +16,11 @@ import {
   saveNewTakyidat,
   updateExistingTakyidat,
   deleteTakyidatById,
+  fetchParcelsList,
+  saveNewParcel,
+  updateExistingParcel,
+  deleteParcelById,
+  saveParcelsBatch,
 } from './services/api.ts';
 import { exportToJSON } from './utils/kmlParser.ts';
 import { RailwayMap } from './components/RailwayMap.tsx';
@@ -27,10 +32,11 @@ import { MobileInstallModal } from './components/MobileInstallModal.tsx';
 import { ReportModal } from './components/ReportModal.tsx';
 import { WorkLogModal } from './components/WorkLogModal.tsx';
 import { TakyidatModal, TakyidatFormDraft } from './components/TakyidatModal.tsx';
+import { RailwayParcelModal } from './components/RailwayParcelModal.tsx';
 import { SelectPointModal } from './components/SelectPointModal.tsx';
 import { LiveKmIndicator } from './components/LiveKmIndicator.tsx';
 import { calculateLiveRailwayKm, NearestKmResult } from './utils/liveRailwayKm.ts';
-import { WorkLog, TakyidatSpeedRestriction } from './types.ts';
+import { WorkLog, TakyidatSpeedRestriction, RailwayParcel } from './types.ts';
 import { Header } from './components/Header.tsx';
 import { PointListSidebar } from './components/PointListSidebar.tsx';
 import { ColorPaletteTabBar } from './components/ColorPaletteTabBar.tsx';
@@ -85,6 +91,9 @@ export default function App() {
   const [takyidatList, setTakyidatList] = useState<TakyidatSpeedRestriction[]>([]);
   const [takyidatPickMode, setTakyidatPickMode] = useState<'start' | 'end' | 'both' | 'both-step2' | null>(null);
   const [takyidatFormDraft, setTakyidatFormDraft] = useState<TakyidatFormDraft | null>(null);
+  const [pointFormDraft, setPointFormDraft] = useState<any>(null);
+  const [isParcelModalOpen, setIsParcelModalOpen] = useState<boolean>(false);
+  const [parcelsList, setParcelsList] = useState<RailwayParcel[]>([]);
   
   // Live GPS KM State
   const [liveGpsCoords, setLiveGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -152,16 +161,18 @@ export default function App() {
   const currentPointCountRef = useRef<number>(0);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
 
-  // Load points & takyidat on mount
+  // Load points, takyidat & parcels on mount
   const loadPoints = useCallback(async () => {
     try {
-      const [data, takData] = await Promise.all([
+      const [data, takData, parcelsData] = await Promise.all([
         fetchRailwayPoints(),
         fetchTakyidatList().catch(() => []),
+        fetchParcelsList().catch(() => []),
       ]);
       const sorted = sortPointsByKm(data);
       setPoints(sorted);
       setTakyidatList(takData);
+      setParcelsList(parcelsData);
       currentPointCountRef.current = sorted.length;
       // If a point was selected, refresh its data reference
       setSelectedPoint((curr) => (curr ? sorted.find((p) => p.id === curr.id) || null : null));
@@ -178,16 +189,18 @@ export default function App() {
     try {
       lastRevisionRef.current = 0;
       currentPointCountRef.current = -1;
-      const [data, takData] = await Promise.all([
+      const [data, takData, parcelsData] = await Promise.all([
         fetchRailwayPoints(),
         fetchTakyidatList().catch(() => []),
+        fetchParcelsList().catch(() => []),
       ]);
       const sorted = sortPointsByKm(data);
       setPoints(sorted);
       setTakyidatList(takData);
+      setParcelsList(parcelsData);
       currentPointCountRef.current = sorted.length;
       setSelectedPoint((curr) => (curr ? sorted.find((p) => p.id === curr.id) || null : null));
-      showToast(`Harita, demiryolu noktaları ve takyidat hız sınırları güncellendi.`);
+      showToast(`Harita, demiryolu noktaları, takyidat ve kadastro arazileri güncellendi.`);
     } catch (err) {
       console.error('Yenileme hatası:', err);
       showToast('Güncelleme sırasında bir sorun oluştu, çevrimdışı veriler korunuyor.');
@@ -1086,6 +1099,60 @@ export default function App() {
     showToast('Haritadan Takyidat seçimi iptal edildi.');
   };
 
+  // ---------------- DEMİRYOLU ARAZİSİ & TAPU KADASTRO HANDLERS ----------------
+  const handleAddParcel = async (newParcelData: Omit<RailwayParcel, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const saved = await saveNewParcel(newParcelData);
+    setParcelsList((prev) => [saved, ...prev.filter((p) => p.id !== saved.id)]);
+    broadcastLocalChange();
+    showToast(`Ada ${saved.adaNo} / Parsel ${saved.parselNo} (${saved.mahalleKoy}) demiryolu arazisi kaydedildi.`);
+  };
+
+  const handleUpdateParcel = async (updatedParcel: RailwayParcel) => {
+    const updated = await updateExistingParcel(updatedParcel);
+    setParcelsList((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    broadcastLocalChange();
+    showToast(`Ada ${updated.adaNo} / Parsel ${updated.parselNo} güncellendi.`);
+  };
+
+  const handleDeleteParcel = async (id: string) => {
+    await deleteParcelById(id);
+    setParcelsList((prev) => prev.filter((p) => p.id !== id));
+    broadcastLocalChange();
+    showToast('Demiryolu kadastro parsel kaydı silindi.');
+  };
+
+  const handleBatchImportParcels = async (list: RailwayParcel[]) => {
+    await saveParcelsBatch(list);
+    setParcelsList((prev) => {
+      const map = new Map();
+      prev.forEach((p) => map.set(p.id, p));
+      list.forEach((p) => map.set(p.id, p));
+      return Array.from(map.values());
+    });
+    broadcastLocalChange();
+    showToast(`${list.length} adet demiryolu arazisi / kadastro parseli sisteme aktarıldı.`);
+  };
+
+  const handleFocusParcelOnMap = (parcel: RailwayParcel) => {
+    if (viewMode === 'list') {
+      setViewMode('map');
+      setActiveTab('map');
+    }
+    // If parcel has coordinates, center map on first coord or find nearest point
+    if (parcel.coordinates && parcel.coordinates.length > 0) {
+      const [firstLat, firstLng] = parcel.coordinates[0];
+      const nearestPt = points.find((p) => {
+        const dLat = p.lat - firstLat;
+        const dLng = p.lng - firstLng;
+        return (dLat * dLat + dLng * dLng) < 0.01;
+      });
+      if (nearestPt) {
+        setSelectedPoint(nearestPt);
+      }
+    }
+    showToast(`Ada ${parcel.adaNo} / Parsel ${parcel.parselNo} (${parcel.mahalleKoy}) arazisine odaklanıldı.`);
+  };
+
   // If verifying session
   if (authLoading) {
     return (
@@ -1133,7 +1200,9 @@ export default function App() {
         filteredCount={filteredPoints.length}
         isOnline={isOnline}
         activeTakyidatCount={takyidatList.filter((r) => r.status === 'active').length}
+        totalParcelsCount={parcelsList.length}
         onOpenTakyidat={() => setIsTakyidatModalOpen(true)}
+        onOpenParcels={() => setIsParcelModalOpen(true)}
         onOpenSelectPoint={() => setIsSelectPointModalOpen(true)}
         onOpenAddModal={handleOpenAddModal}
         onOpenImportExport={() => setIsImportExportOpen(true)}
@@ -1220,6 +1289,8 @@ export default function App() {
                 isRefreshing={isRefreshing}
                 takyidatRestrictions={takyidatList}
                 onOpenTakyidat={() => setIsTakyidatModalOpen(true)}
+                railwayParcels={parcelsList}
+                onOpenParcels={() => setIsParcelModalOpen(true)}
                 isLivePointPickMode={isLivePointPickMode}
                 onPickLivePoint={handleMapClickPickLivePoint}
                 onCancelLivePointPick={() => setIsLivePointPickMode(false)}
@@ -1262,6 +1333,8 @@ export default function App() {
             onOpenWorkLogs={(pt) => setWorkLogPoint(pt)}
             takyidatRestrictions={takyidatList}
             onOpenTakyidat={() => setIsTakyidatModalOpen(true)}
+            railwayParcels={parcelsList}
+            onOpenParcels={() => setIsParcelModalOpen(true)}
             onSelectLiveLocation={handleSelectPointAsLive}
             onPanToPoint={(pt) => {
               setSelectedPoint(pt);
@@ -1304,20 +1377,30 @@ export default function App() {
       {/* Add / Edit Point Modal */}
       <PointFormModal
         isOpen={isFormModalOpen}
-        onClose={() => setIsFormModalOpen(false)}
-        onSave={handleSavePoint}
+        onClose={() => {
+          setIsFormModalOpen(false);
+          setPointFormDraft(null);
+        }}
+        onSave={async (data) => {
+          await handleSavePoint(data);
+          setPointFormDraft(null);
+        }}
         editingPoint={editingPoint}
         initialCoords={clickCoords}
+        initialDraft={pointFormDraft}
         onDelete={handleDeletePoint}
         allExistingLines={availableLines}
-        onPickOnMap={() => {
+        onPickOnMap={(draft) => {
+          if (draft) {
+            setPointFormDraft(draft);
+          }
           setIsFormModalOpen(false);
           if (viewMode === 'list') {
             setViewMode('map');
             setActiveTab('map');
           }
           setIsAddMode(true);
-          showToast('📍 Haritada istediğiniz konuma dokunun, koordinatlar otomatik forma doldurulacaktır.');
+          showToast('📍 Haritada istediğiniz konuma dokunun, formdaki bilgileriniz korunarak koordinat eklenecektir.');
         }}
       />
 
@@ -1399,6 +1482,8 @@ export default function App() {
         onOpenPalette={() => setActiveTab('palette')}
         onOpenReports={() => setIsReportModalOpen(true)}
         onOpenTakyidat={() => setIsTakyidatModalOpen(true)}
+        onOpenParcels={() => setIsParcelModalOpen(true)}
+        totalParcelsCount={parcelsList.length}
         onOpenSelectPoint={() => setIsSelectPointModalOpen(true)}
         activeTakyidatCount={takyidatList.filter((r) => r.status === 'active').length}
         onRefresh={handleRefresh}
@@ -1422,6 +1507,20 @@ export default function App() {
         onStartPickOnMap={handleStartTakyidatPickOnMap}
         initialDraft={takyidatFormDraft}
         onDraftConsumed={() => setTakyidatFormDraft(null)}
+      />
+
+      {/* TCDD Demiryolu Arazisi & Tapu Kadastro (Kamulaştırma Sahası) Modalı */}
+      <RailwayParcelModal
+        isOpen={isParcelModalOpen}
+        onClose={() => setIsParcelModalOpen(false)}
+        parcels={parcelsList}
+        points={points}
+        availableLines={availableLines}
+        onAddParcel={handleAddParcel}
+        onUpdateParcel={handleUpdateParcel}
+        onDeleteParcel={handleDeleteParcel}
+        onBatchImportParcels={handleBatchImportParcels}
+        onFocusParcelOnMap={handleFocusParcelOnMap}
       />
 
       {/* Canlı Konum İçin Nokta Seçme Modalı */}

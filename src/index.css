@@ -39,3 +39,12 @@
 .animate-track-move {
   animation: trackSleeperMove 0.8s linear infinite;
 }
+
+/* TCDD Marker Clustering Custom Styling */
+.tcdd-marker-cluster-badge {
+  background: transparent !important;
+  border: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}

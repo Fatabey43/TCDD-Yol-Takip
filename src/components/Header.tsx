@@ -26,6 +26,7 @@ import {
   WifiOff,
   Gauge,
   Compass,
+  Landmark,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -36,7 +37,9 @@ interface HeaderProps {
   filteredCount: number;
   isOnline?: boolean;
   activeTakyidatCount?: number;
+  totalParcelsCount?: number;
   onOpenTakyidat?: () => void;
+  onOpenParcels?: () => void;
   onOpenSelectPoint?: () => void;
   onOpenAddModal: () => void;
   onOpenImportExport: () => void;
@@ -79,7 +82,9 @@ export const Header: React.FC<HeaderProps> = ({
   filteredCount,
   isOnline = true,
   activeTakyidatCount = 0,
+  totalParcelsCount = 0,
   onOpenTakyidat,
+  onOpenParcels,
   onOpenSelectPoint,
   onOpenAddModal,
   onOpenImportExport,
@@ -323,6 +328,25 @@ export const Header: React.FC<HeaderProps> = ({
                 {activeTakyidatCount > 0 && (
                   <span className="bg-amber-400 text-slate-950 px-1.5 py-0.2 rounded-full text-[10px] font-black">
                     {activeTakyidatCount}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* Demiryolu Arazisi & Tapu Kadastro Butonu */}
+            {onOpenParcels && (
+              <button
+                id="header-open-parcels-btn"
+                onClick={onOpenParcels}
+                className="flex items-center gap-1.5 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/50 text-indigo-200 hover:text-white text-xs font-bold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer shadow-2xs"
+                title="TCDD Demiryolu Arazisi & Tapu Kadastro Portalı (Kamulaştırma, Emlak ve Mülkiyet Takibi)"
+              >
+                <Landmark className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="hidden md:inline">Arazi &amp; Kadastro</span>
+                <span className="md:hidden">Arazi</span>
+                {totalParcelsCount > 0 && (
+                  <span className="bg-indigo-600 text-white px-1.5 py-0.2 rounded-full text-[10px] font-black">
+                    {totalParcelsCount}
                   </span>
                 )}
               </button>

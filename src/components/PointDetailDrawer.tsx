@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { RailwayPoint, RailwayPointCategory, PointNote, PointPhoto, TextStyleConfig, TakyidatSpeedRestriction } from '../types.ts';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { RailwayPoint, RailwayPointCategory, PointNote, PointPhoto, TextStyleConfig, TakyidatSpeedRestriction, RailwayParcel } from '../types.ts';
 import { CategoryColorConfig, DEFAULT_CATEGORY_COLORS, formatKmDisplay } from '../utils/categoryColors.ts';
 import { getTextStyleInline, DEFAULT_TEXT_STYLE } from '../utils/textStyleHelper.ts';
 import { compressImage } from '../utils/imageCompressor.ts';
@@ -41,6 +41,7 @@ import {
   Gauge,
   AlertTriangle,
   Compass,
+  Landmark,
 } from 'lucide-react';
 
 interface PointDetailDrawerProps {
@@ -58,6 +59,8 @@ interface PointDetailDrawerProps {
   onOpenWorkLogs?: (point: RailwayPoint) => void;
   takyidatRestrictions?: TakyidatSpeedRestriction[];
   onOpenTakyidat?: () => void;
+  railwayParcels?: RailwayParcel[];
+  onOpenParcels?: () => void;
   onSelectLiveLocation?: (point: RailwayPoint) => void;
 }
 
@@ -129,9 +132,28 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
   onOpenWorkLogs,
   takyidatRestrictions = [],
   onOpenTakyidat,
+  railwayParcels = [],
+  onOpenParcels,
   onSelectLiveLocation,
 }) => {
   const { user, isAdmin, canAddNote, canAddPhoto, canDelete } = useAuth();
+
+  const matchingParcel = useMemo(() => {
+    if (!point || !railwayParcels || railwayParcels.length === 0) return null;
+    const ptKm = parseKmToNumber(point.kmValue, point.title);
+    if (ptKm === null) return null;
+
+    return railwayParcels.find((p) => {
+      const matchLine = !p.lineName || p.lineName === 'all' || p.lineName === point.lineName;
+      if (!matchLine) return false;
+      const sKm = p.startKmNum !== undefined ? p.startKmNum : parseKmToNumber(p.startKm);
+      const eKm = p.endKmNum !== undefined ? p.endKmNum : parseKmToNumber(p.endKm);
+      if (sKm !== null && eKm !== null && sKm !== undefined && eKm !== undefined) {
+        return ptKm >= Math.min(sKm, eKm) - 0.05 && ptKm <= Math.max(sKm, eKm) + 0.05;
+      }
+      return false;
+    });
+  }, [point, railwayParcels]);
   // On mobile screens, start in compact mode so map remains visible and screen isn't crowded!
   const [isExpanded, setIsExpanded] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -430,6 +452,39 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
                 </span>
               )}
             </div>
+
+            {/* Demiryolu Arazisi & Tapu Kadastro Bilgisi Kartı */}
+            {matchingParcel && (
+              <div className="mt-1 pt-1.5 border-t border-slate-100 flex items-center justify-between gap-1 text-[11px] bg-indigo-50/80 p-1.5 rounded-lg border border-indigo-200/70">
+                <div className="flex items-center gap-1.5 text-indigo-950 font-bold truncate">
+                  <Landmark className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                  <span className="truncate">
+                    TCDD Arazisi: Ada {matchingParcel.adaNo} / Parsel {matchingParcel.parselNo} ({matchingParcel.mahalleKoy})
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {matchingParcel.tkgmUrl && (
+                    <a
+                      href={matchingParcel.tkgmUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold px-2 py-0.5 rounded transition-colors"
+                      title="Resmi TKGM Parsel Sorgu'da Aç"
+                    >
+                      TKGM
+                    </a>
+                  )}
+                  {onOpenParcels && (
+                    <button
+                      onClick={onOpenParcels}
+                      className="text-indigo-700 hover:text-indigo-950 font-bold text-[10px] underline"
+                    >
+                      Detay
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* İç Kutu 2: Hızlı Eylemler Çubuğu (Kutucuk içinde kutucuk) */}

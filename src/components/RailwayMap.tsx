@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import L from 'leaflet';
-import { RailwayPoint, RailwayPointCategory, TakyidatSpeedRestriction } from '../types.ts';
+import L from '../utils/leafletCluster.ts';
+import { RailwayPoint, RailwayPointCategory, TakyidatSpeedRestriction, RailwayParcel } from '../types.ts';
 import { CategoryColorConfig, DEFAULT_CATEGORY_COLORS, formatKmDisplay } from '../utils/categoryColors.ts';
 import {
   getDistanceMeters,
@@ -10,7 +10,8 @@ import {
   LatLngPoint,
 } from '../utils/measurement.ts';
 import { parseKmToNumber } from '../utils/kmUtils.ts';
-import { Layers, Locate, Maximize2, Plus, Train, Ruler, RotateCcw, Undo2, Check, RotateCw, Globe, ExternalLink, MapPin, Crosshair, Gauge, AlertTriangle, X } from 'lucide-react';
+import { calculateParcelCenter } from '../utils/parcelUtils.ts';
+import { Layers, Locate, Maximize2, Plus, Train, Ruler, RotateCcw, Undo2, Check, RotateCw, Globe, ExternalLink, MapPin, Crosshair, Gauge, AlertTriangle, X, Landmark, Sparkles } from 'lucide-react';
 
 interface RailwayMapProps {
   points: RailwayPoint[];
@@ -25,6 +26,8 @@ interface RailwayMapProps {
   isRefreshing?: boolean;
   takyidatRestrictions?: TakyidatSpeedRestriction[];
   onOpenTakyidat?: () => void;
+  railwayParcels?: RailwayParcel[];
+  onOpenParcels?: () => void;
   isLivePointPickMode?: boolean;
   onPickLivePoint?: (lat: number, lng: number) => void;
   onCancelLivePointPick?: () => void;
@@ -32,6 +35,58 @@ interface RailwayMapProps {
   onPickTakyidatPoint?: (lat: number, lng: number, pointKm?: string, pointTitle?: string, lineName?: string) => void;
   onCancelTakyidatPick?: () => void;
   liveGpsCoords?: { lat: number; lng: number } | null;
+}
+
+function createMarkerClusterGroup(): L.MarkerClusterGroup {
+  return (L as any).markerClusterGroup({
+    chunkedLoading: true,
+    chunkInterval: 80,
+    chunkDelay: 15,
+    maxClusterRadius: (zoom: number) => (zoom >= 14 ? 32 : zoom >= 11 ? 48 : 65),
+    spiderfyOnMaxZoom: true,
+    spiderfyDistanceMultiplier: 1.5,
+    showCoverageOnHover: false,
+    zoomToBoundsOnClick: true,
+    removeOutsideVisibleBounds: true,
+    disableClusteringAtZoom: 18,
+    iconCreateFunction: (cluster: any) => {
+      const count = cluster.getChildCount();
+      let sizePx = 42;
+      let badgeColor = 'bg-gradient-to-tr from-indigo-700 via-sky-600 to-indigo-800 border-sky-300 text-white shadow-indigo-900/60';
+      let ringColor = 'border-sky-400/40';
+
+      if (count >= 100) {
+        sizePx = 52;
+        badgeColor = 'bg-gradient-to-tr from-rose-700 via-red-600 to-amber-600 border-amber-300 text-white shadow-rose-950/70';
+        ringColor = 'border-rose-400/50';
+      } else if (count >= 30) {
+        sizePx = 48;
+        badgeColor = 'bg-gradient-to-tr from-amber-600 via-yellow-600 to-amber-700 border-yellow-200 text-white shadow-amber-950/60';
+        ringColor = 'border-amber-400/50';
+      } else if (count >= 10) {
+        sizePx = 44;
+        badgeColor = 'bg-gradient-to-tr from-teal-700 via-emerald-600 to-teal-800 border-emerald-300 text-white shadow-teal-950/60';
+        ringColor = 'border-teal-400/40';
+      }
+
+      const html = `
+        <div class="relative flex items-center justify-center cursor-pointer group transition-transform duration-200 hover:scale-110 notranslate" translate="no">
+          <div class="absolute -inset-2 rounded-full border-2 ${ringColor} animate-pulse pointer-events-none"></div>
+          <div style="width: ${sizePx}px; height: ${sizePx}px;" class="${badgeColor} rounded-full flex flex-col items-center justify-center font-mono font-black border-2 shadow-2xl ring-2 ring-black/40">
+            <span class="text-[9px] leading-none opacity-85 font-bold tracking-tight">KM</span>
+            <span class="text-xs leading-tight font-black tracking-tighter">${count}</span>
+          </div>
+        </div>
+      `;
+
+      return L.divIcon({
+        html,
+        className: 'tcdd-marker-cluster-badge',
+        iconSize: [sizePx, sizePx],
+        iconAnchor: [sizePx / 2, sizePx / 2],
+      });
+    },
+  });
 }
 
 function createMarkerIcon(
@@ -89,6 +144,8 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
   isRefreshing,
   takyidatRestrictions = [],
   onOpenTakyidat,
+  railwayParcels = [],
+  onOpenParcels,
   isLivePointPickMode = false,
   onPickLivePoint,
   onCancelLivePointPick,
@@ -99,14 +156,32 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
-  const markersLayerRef = useRef<L.LayerGroup | null>(null);
+  const markersLayerRef = useRef<L.LayerGroup | L.MarkerClusterGroup | null>(null);
+  const markerInstancesMapRef = useRef<Map<string, L.Marker>>(new Map());
   const railwayLayerRef = useRef<L.TileLayer | null>(null);
   const measureLayerRef = useRef<L.LayerGroup | null>(null);
   const takyidatLayerRef = useRef<L.LayerGroup | null>(null);
+  const parcelsLayerRef = useRef<L.LayerGroup | null>(null);
+
+  const [enableClustering, setEnableClustering] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem('tcdd_marker_clustering_enabled');
+      return stored !== null ? stored === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('tcdd_marker_clustering_enabled', String(enableClustering));
+    } catch {}
+  }, [enableClustering]);
 
   const [mapType, setMapType] = useState<'streets' | 'google-earth' | 'google-satellite' | 'esri-satellite'>('google-earth');
   const [showRailwayOverlay, setShowRailwayOverlay] = useState<boolean>(true);
   const [showTakyidatOverlay, setShowTakyidatOverlay] = useState<boolean>(true);
+  const [showParcelsOverlay, setShowParcelsOverlay] = useState<boolean>(true);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const userMarkerRef = useRef<L.Marker | null>(null);
@@ -203,13 +278,13 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
       attribution: '&copy; <a href="https://www.openrailwaymap.org/">OpenRailwayMap</a>',
     }).addTo(map);
 
-    const markersGroup = L.layerGroup().addTo(map);
     const takyidatGroup = L.layerGroup().addTo(map);
+    const parcelsGroup = L.layerGroup().addTo(map);
     const measureGroup = L.layerGroup().addTo(map);
 
     mapInstanceRef.current = map;
-    markersLayerRef.current = markersGroup;
     takyidatLayerRef.current = takyidatGroup;
+    parcelsLayerRef.current = parcelsGroup;
     railwayLayerRef.current = railwayOverlay;
     measureLayerRef.current = measureGroup;
 
@@ -493,13 +568,33 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
     }
   }, [measurePoints, hoverPoint, isMeasuring]);
 
-  // Update Markers
+  // Update & Render Markers (Clustered or Flat Layer Group with Chunked Loading)
   useEffect(() => {
     const map = mapInstanceRef.current;
-    const markersGroup = markersLayerRef.current;
-    if (!map || !markersGroup) return;
+    if (!map) return;
 
-    markersGroup.clearLayers();
+    // Check if we need to switch or initialize between ClusterGroup and plain LayerGroup
+    const currentLayer = markersLayerRef.current;
+    const isCurrentlyCluster = currentLayer && typeof (currentLayer as any).zoomToShowLayer === 'function';
+
+    let layerToUse: L.LayerGroup | L.MarkerClusterGroup;
+    if (!currentLayer || Boolean(isCurrentlyCluster) !== Boolean(enableClustering)) {
+      if (currentLayer) {
+        map.removeLayer(currentLayer);
+      }
+      layerToUse = enableClustering
+        ? createMarkerClusterGroup()
+        : L.layerGroup();
+      layerToUse.addTo(map);
+      markersLayerRef.current = layerToUse;
+    } else {
+      layerToUse = currentLayer;
+    }
+
+    layerToUse.clearLayers();
+    markerInstancesMapRef.current.clear();
+
+    const markersList: L.Marker[] = [];
 
     points.forEach((point) => {
       const isSelected = selectedPoint?.id === point.id;
@@ -537,9 +632,28 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
         { direction: 'top', offset: [0, -32] }
       );
 
-      marker.addTo(markersGroup);
+      markerInstancesMapRef.current.set(point.id, marker);
+      markersList.push(marker);
     });
-  }, [points, selectedPoint, onSelectPoint, categoryColors]);
+
+    if (enableClustering && typeof (layerToUse as any).addLayers === 'function') {
+      (layerToUse as any).addLayers(markersList);
+    } else {
+      markersList.forEach((m) => layerToUse.addLayer(m));
+    }
+
+    // If a point is selected, zoom/pan to it and reveal it from inside cluster
+    if (selectedPoint && markerInstancesMapRef.current.has(selectedPoint.id)) {
+      const selectedMarker = markerInstancesMapRef.current.get(selectedPoint.id)!;
+      if (enableClustering && typeof (layerToUse as any).zoomToShowLayer === 'function') {
+        (layerToUse as any).zoomToShowLayer(selectedMarker, () => {
+          selectedMarker.openTooltip();
+        });
+      } else {
+        selectedMarker.openTooltip();
+      }
+    }
+  }, [points, selectedPoint, onSelectPoint, categoryColors, enableClustering]);
 
   // Render Takyidat (Speed Restriction Segments & Warning Badges) on the Railway Map
   useEffect(() => {
@@ -686,6 +800,107 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
       );
     });
   }, [points, takyidatRestrictions, showTakyidatOverlay, onOpenTakyidat]);
+
+  // Render Railway Parcels / Demiryolu Arazileri Polygons & Badges
+  useEffect(() => {
+    const parcelsGroup = parcelsLayerRef.current;
+    if (!parcelsGroup) return;
+    parcelsGroup.clearLayers();
+
+    if (!showParcelsOverlay || !railwayParcels || railwayParcels.length === 0) return;
+
+    railwayParcels.forEach((parcel) => {
+      if (!parcel.coordinates || parcel.coordinates.length < 3) return;
+
+      const isEncroached = parcel.encroachmentStatus === 'suspected' || parcel.encroachmentStatus === 'verified';
+      const isTcdd = parcel.ownershipStatus === 'tcdd' || !parcel.ownershipStatus;
+      const isTreasury = parcel.ownershipStatus === 'treasury';
+      const isExpropriating = parcel.ownershipStatus === 'expropriating';
+
+      const color = isEncroached
+        ? '#ef4444'
+        : isTcdd
+        ? '#7c3aed'
+        : isTreasury
+        ? '#0284c7'
+        : isExpropriating
+        ? '#d97706'
+        : '#8b5cf6';
+
+      const polygon = L.polygon(parcel.coordinates, {
+        color: color,
+        fillColor: color,
+        fillOpacity: isEncroached ? 0.32 : 0.22,
+        weight: isEncroached ? 3 : 2.5,
+        dashArray: isEncroached ? '6, 6' : undefined,
+      }).addTo(parcelsGroup);
+
+      // Tooltip
+      polygon.bindTooltip(
+        `
+        <div class="text-xs font-sans notranslate p-1" translate="no">
+          <div class="flex items-center gap-1.5 font-bold ${isEncroached ? 'text-red-700' : 'text-indigo-800'}">
+            <span>🏛️ ADA ${parcel.adaNo} / PARSEL ${parcel.parselNo}</span>
+          </div>
+          <div class="font-semibold text-slate-800 text-[11px] mt-0.5">${parcel.mahalleKoy}, ${parcel.ilce}</div>
+          <div class="text-slate-600 text-[10px]">${parcel.nitelik || 'Demiryolu Arazisi'} • ${parcel.alanM2?.toLocaleString('tr-TR')} m²</div>
+          ${parcel.startKm ? `<div class="font-mono text-[10px] text-amber-600 font-bold mt-0.5">KM ${parcel.startKm} ${parcel.endKm ? '➔ ' + parcel.endKm : ''}</div>` : ''}
+          ${isEncroached ? `<div class="text-[9px] text-red-600 font-bold mt-0.5">⚠️ İşgal / Tecavüz: ${parcel.encroachmentNote || 'Tespit Edildi'}</div>` : ''}
+        </div>
+      `,
+        { sticky: true }
+      );
+
+      // Popup
+      const tkgmLinkHtml = parcel.tkgmUrl
+        ? `<a href="${parcel.tkgmUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:4px;background-color:#0284c7;color:#ffffff;font-size:11px;font-weight:bold;padding:4px 8px;border-radius:6px;text-decoration:none;margin-top:6px;">
+            <span>TKGM Parsel Sorgu'da Aç ➔</span>
+          </a>`
+        : '';
+
+      polygon.bindPopup(
+        `
+        <div class="p-1 font-sans notranslate max-w-[260px]" translate="no">
+          <div class="flex items-center justify-between gap-1 border-b border-slate-200 pb-1.5 mb-1.5">
+            <span class="font-extrabold text-indigo-700 text-xs">TCDD DEMİRYOLU ARAZİSİ</span>
+            <span class="text-[10px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded font-black font-mono">Ada ${parcel.adaNo} / Parsel ${parcel.parselNo}</span>
+          </div>
+          <div class="text-xs font-bold text-slate-900">${parcel.mahalleKoy}, ${parcel.ilce} / ${parcel.il}</div>
+          <div class="text-[11px] text-slate-600 mt-0.5"><span class="text-slate-400 font-medium">Nitelik:</span> ${parcel.nitelik || 'Demiryolu Güzergahı'}</div>
+          <div class="text-[11px] text-slate-600"><span class="text-slate-400 font-medium">Malik:</span> ${parcel.malik || 'TCDD Genel Müdürlüğü'}</div>
+          <div class="flex items-center justify-between text-[11px] font-mono mt-1.5 pt-1.5 border-t border-slate-100">
+            <span class="text-amber-600 font-bold">${parcel.startKm ? 'KM ' + parcel.startKm : ''} ${parcel.endKm ? '➔ ' + parcel.endKm : ''}</span>
+            <span class="text-emerald-700 font-bold">${parcel.alanM2?.toLocaleString('tr-TR')} m²</span>
+          </div>
+          ${isEncroached ? `<div class="bg-red-50 border border-red-200 text-red-800 text-[10px] p-2 rounded-lg mt-2 font-bold">⚠️ ${parcel.encroachmentNote || 'İşgal / Tecavüz Bildirimi'}</div>` : ''}
+          <div class="mt-2 flex items-center justify-between gap-2">
+            ${tkgmLinkHtml}
+          </div>
+        </div>
+      `
+      );
+
+      // Midpoint badge
+      const center = calculateParcelCenter(parcel.coordinates);
+      const badgeHtml = `
+        <div class="cursor-pointer flex items-center justify-center notranslate" translate="no" title="Ada ${parcel.adaNo} / Parsel ${parcel.parselNo}">
+          <div class="px-1.5 py-0.5 rounded-md ${isEncroached ? 'bg-red-950/90 text-red-200 border-red-500' : 'bg-slate-950/90 text-indigo-200 border-indigo-400'} font-mono font-bold text-[9px] border shadow-md whitespace-nowrap">
+            ${parcel.adaNo}/${parcel.parselNo}
+          </div>
+        </div>
+      `;
+      const badgeIcon = L.divIcon({
+        html: badgeHtml,
+        className: 'custom-parcel-badge-marker',
+        iconSize: [46, 18],
+        iconAnchor: [23, 9],
+      });
+      const badgeMarker = L.marker(center, { icon: badgeIcon }).addTo(parcelsGroup);
+      badgeMarker.on('click', () => {
+        polygon.openPopup();
+      });
+    });
+  }, [railwayParcels, showParcelsOverlay, onOpenParcels]);
 
   // Pan to selected point
   useEffect(() => {
@@ -1093,6 +1308,27 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
             </button>
           )}
 
+          {/* Demiryolu Arazisi & Kadastro Modal Butonu */}
+          {onOpenParcels && (
+            <button
+              id="map-parcels-btn"
+              onClick={onOpenParcels}
+              title={`TCDD Demiryolu Arazisi & Kadastro Parselleri (${railwayParcels.length})`}
+              className={`p-2 sm:p-2.5 rounded-xl transition-all flex items-center justify-center cursor-pointer relative ${
+                railwayParcels.length > 0
+                  ? 'text-indigo-700 hover:text-indigo-950 hover:bg-indigo-50'
+                  : 'text-slate-700 hover:text-indigo-600 hover:bg-slate-100'
+              }`}
+            >
+              <Landmark className="w-4 h-4" />
+              {railwayParcels.length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-white">
+                  {railwayParcels.length}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Fit all points */}
           <button
             id="map-fit-all-btn"
@@ -1233,8 +1469,24 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
               )}
             </button>
 
-            {/* OpenRailwayMap Overlay Checkbox */}
+            {/* Marker Clustering & Overlays Section */}
             <div className="pt-2 border-t border-slate-100 space-y-1">
+              {/* Marker Clustering Toggle */}
+              <label className="flex items-center justify-between cursor-pointer select-none text-emerald-800 py-1 font-bold bg-emerald-50/70 px-2 rounded-lg border border-emerald-200/60 hover:bg-emerald-50 transition-colors">
+                <span className="flex items-center gap-1.5 text-xs">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Noktaları Kümele (Hızlı Mod)</span>
+                </span>
+                <input
+                  id="map-toggle-marker-clustering"
+                  type="checkbox"
+                  checked={enableClustering}
+                  onChange={(e) => setEnableClustering(e.target.checked)}
+                  className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                  title="Marker Clustering (Kümeleme) modunu açıp kapatır"
+                />
+              </label>
+
               <label className="flex items-center gap-2 cursor-pointer select-none text-slate-700 py-1">
                 <input
                   id="map-toggle-railway-overlay"
@@ -1258,6 +1510,21 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
                 <span className="flex items-center gap-1.5">
                   <Gauge className="w-3.5 h-3.5 text-red-600" />
                   <span>Takyidat &amp; Hız Sınırları ({takyidatRestrictions.length})</span>
+                </span>
+              </label>
+
+              {/* Demiryolu Arazileri / Kadastro Overlay Toggle */}
+              <label className="flex items-center gap-2 cursor-pointer select-none text-indigo-700 py-1 font-bold">
+                <input
+                  id="map-toggle-parcels-overlay"
+                  type="checkbox"
+                  checked={showParcelsOverlay}
+                  onChange={(e) => setShowParcelsOverlay(e.target.checked)}
+                  className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                />
+                <span className="flex items-center gap-1.5">
+                  <Landmark className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Demiryolu Arazileri &amp; Parseller ({railwayParcels.length})</span>
                 </span>
               </label>
             </div>
@@ -1290,6 +1557,12 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
           <span>
             {points.length} demiryolu noktası kayıtlı
           </span>
+          {enableClustering && (
+            <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1">
+              <Sparkles className="w-2.5 h-2.5 text-emerald-400" />
+              <span>Kümeleme Aktif</span>
+            </span>
+          )}
         </div>
 
         {takyidatRestrictions.some((r) => r.status === 'active') && onOpenTakyidat && (
@@ -1301,6 +1574,19 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
             <Gauge className="w-3.5 h-3.5 text-amber-200" />
             <span>
               {takyidatRestrictions.filter((r) => r.status === 'active').length} Hız Tahdidi (Takyidat)
+            </span>
+          </button>
+        )}
+
+        {railwayParcels.length > 0 && onOpenParcels && (
+          <button
+            onClick={onOpenParcels}
+            className="bg-indigo-950/90 hover:bg-indigo-900 backdrop-blur-md text-indigo-200 hover:text-white px-3 py-1.5 rounded-xl shadow-lg border border-indigo-500/40 flex items-center gap-2 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+            title="Kayıtlı Demiryolu Taşınmaz ve Kadastro Parsellerini Listele"
+          >
+            <Landmark className="w-3.5 h-3.5 text-indigo-400" />
+            <span>
+              {railwayParcels.length} Kadastro Parseli
             </span>
           </button>
         )}

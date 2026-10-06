@@ -16,6 +16,7 @@ import {
   FileText,
   Gauge,
   Compass,
+  Landmark,
 } from 'lucide-react';
 
 interface MobileActionsDrawerProps {
@@ -27,8 +28,10 @@ interface MobileActionsDrawerProps {
   onOpenPalette: () => void;
   onOpenReports?: () => void;
   onOpenTakyidat?: () => void;
+  onOpenParcels?: () => void;
   onOpenSelectPoint?: () => void;
   activeTakyidatCount?: number;
+  totalParcelsCount?: number;
   onRefresh: () => void;
   onExportJSON: () => void;
   onSyncPhotos: () => void;
@@ -45,8 +48,10 @@ export const MobileActionsDrawer: React.FC<MobileActionsDrawerProps> = ({
   onOpenPalette,
   onOpenReports,
   onOpenTakyidat,
+  onOpenParcels,
   onOpenSelectPoint,
   activeTakyidatCount = 0,
+  totalParcelsCount = 0,
   onRefresh,
   onExportJSON,
   onSyncPhotos,
@@ -200,6 +205,30 @@ export const MobileActionsDrawer: React.FC<MobileActionsDrawerProps> = ({
                   )}
                 </span>
                 <span className="text-[10px] text-red-300/80">KM Hız Tahditleri</span>
+              </div>
+            </button>
+          )}
+
+          {/* Demiryolu Arazisi & Tapu Kadastro */}
+          {onOpenParcels && (
+            <button
+              onClick={() => {
+                onOpenParcels();
+                onClose();
+              }}
+              className="flex items-center gap-2 p-3 bg-indigo-950/80 hover:bg-indigo-900 active:bg-indigo-850 rounded-xl border border-indigo-500/50 transition-all font-semibold text-indigo-200"
+            >
+              <Landmark className="w-4 h-4 text-indigo-400" />
+              <div className="text-left leading-tight">
+                <span className="block font-bold flex items-center gap-1.5">
+                  <span>Demiryolu Arazisi &amp; Tapu</span>
+                  {totalParcelsCount > 0 && (
+                    <span className="bg-indigo-500 text-white px-1.5 py-0.2 rounded-full text-[9px] font-black">
+                      {totalParcelsCount}
+                    </span>
+                  )}
+                </span>
+                <span className="text-[10px] text-indigo-300/80">Kamulaştırma &amp; Mülkiyet</span>
               </div>
             </button>
           )}

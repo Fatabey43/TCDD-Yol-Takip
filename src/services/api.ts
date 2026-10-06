@@ -1,4 +1,4 @@
-import { RailwayPoint, PointNote, PointPhoto, TakyidatSpeedRestriction } from '../types.ts';
+import { RailwayPoint, PointNote, PointPhoto, TakyidatSpeedRestriction, RailwayParcel } from '../types.ts';
 import { DEFAULT_SAMPLE_IDS } from '../data/samplePoints.ts';
 import { extractKmFromText } from '../utils/categoryColors.ts';
 import { compressImage } from '../utils/imageCompressor.ts';
@@ -728,6 +728,12 @@ export async function updateExistingPoint(point: RailwayPoint): Promise<RailwayP
     preservedCrossing = existingLocal.levelCrossing;
   }
 
+  // Preserve culvert if existing point had it and incoming is undefined
+  let preservedCulvert = point.culvert;
+  if ((!preservedCulvert || Object.keys(preservedCulvert).length === 0) && existingLocal && existingLocal.culvert && Object.keys(existingLocal.culvert).length > 0) {
+    preservedCulvert = existingLocal.culvert;
+  }
+
   const resolvedKm = (point.kmValue && point.kmValue.trim())
     ? point.kmValue.trim()
     : extractKmFromText(point.title);
@@ -736,6 +742,7 @@ export async function updateExistingPoint(point: RailwayPoint): Promise<RailwayP
     ...point,
     kmValue: resolvedKm,
     levelCrossing: preservedCrossing,
+    culvert: preservedCulvert,
     photos: preservedPhotos,
     notes: preservedNotes,
     updatedAt: new Date().toISOString(),
@@ -1231,3 +1238,138 @@ export async function deleteTakyidatById(id: string): Promise<boolean> {
     return true;
   }
 }
+
+// ---------------- DEMİRYOLU ARAZİSİ & TAPU KADASTRO (PARSEL) API ----------------
+const PARCELS_STORAGE_KEY = 'demiryolu_parcels_cache_v1';
+
+export function getLocalCachedParcels(): RailwayParcel[] {
+  try {
+    const raw = localStorage.getItem(PARCELS_STORAGE_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return arr;
+    }
+  } catch {}
+  return [];
+}
+
+export function saveLocalCachedParcels(list: RailwayParcel[]): void {
+  try {
+    localStorage.setItem(PARCELS_STORAGE_KEY, JSON.stringify(list));
+  } catch {}
+}
+
+export async function fetchParcelsList(): Promise<RailwayParcel[]> {
+  try {
+    const res = await fetch(`/api/parcels?_t=${Date.now()}`, { cache: 'no-store' });
+    if (res.ok) {
+      const list = await res.json();
+      if (Array.isArray(list)) {
+        saveLocalCachedParcels(list);
+        return list;
+      }
+    }
+  } catch (err) {
+    console.warn('Parseller sunucudan çekilemedi, yerel önbellek kullanılıyor:', err);
+  }
+  return getLocalCachedParcels();
+}
+
+export async function saveNewParcel(
+  entry: Omit<RailwayParcel, 'id' | 'createdAt' | 'updatedAt'>
+): Promise<RailwayParcel> {
+  const startKmNum = entry.startKm ? (parseKmToNumber(entry.startKm) ?? undefined) : undefined;
+  const endKmNum = entry.endKm ? (parseKmToNumber(entry.endKm) ?? undefined) : undefined;
+  const tempId = `parsel-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+
+  const newObj: RailwayParcel = {
+    ...entry,
+    id: tempId,
+    startKmNum,
+    endKmNum,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const local = getLocalCachedParcels();
+  saveLocalCachedParcels([newObj, ...local.filter((p) => p.id !== newObj.id)]);
+
+  try {
+    const res = await fetch('/api/parcels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newObj),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      const updatedList = [created, ...local.filter((p) => p.id !== tempId && p.id !== created.id)];
+      saveLocalCachedParcels(updatedList);
+      return created;
+    }
+  } catch (err) {
+    console.warn('Parsel çevrimdışı kaydedildi:', err);
+  }
+  return newObj;
+}
+
+export async function updateExistingParcel(entry: RailwayParcel): Promise<RailwayParcel> {
+  const startKmNum = entry.startKm ? (parseKmToNumber(entry.startKm) ?? entry.startKmNum) : entry.startKmNum;
+  const endKmNum = entry.endKm ? (parseKmToNumber(entry.endKm) ?? entry.endKmNum) : entry.endKmNum;
+
+  const updatedObj: RailwayParcel = {
+    ...entry,
+    startKmNum,
+    endKmNum,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const local = getLocalCachedParcels();
+  const updatedList = local.map((p) => (p.id === updatedObj.id ? updatedObj : p));
+  saveLocalCachedParcels(updatedList);
+
+  try {
+    const res = await fetch(`/api/parcels/${encodeURIComponent(entry.id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedObj),
+    });
+    if (res.ok) {
+      const serverUpdated = await res.json();
+      saveLocalCachedParcels(local.map((p) => (p.id === serverUpdated.id ? serverUpdated : p)));
+      return serverUpdated;
+    }
+  } catch (err) {
+    console.warn('Parsel güncellemesi çevrimdışı kaydedildi:', err);
+  }
+  return updatedObj;
+}
+
+export async function deleteParcelById(id: string): Promise<boolean> {
+  const local = getLocalCachedParcels();
+  saveLocalCachedParcels(local.filter((p) => p.id !== id));
+
+  try {
+    const res = await fetch(`/api/parcels/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    return res.ok;
+  } catch {
+    return true;
+  }
+}
+
+export async function saveParcelsBatch(list: RailwayParcel[]): Promise<{ success: boolean; count: number }> {
+  saveLocalCachedParcels(list);
+  try {
+    const res = await fetch('/api/parcels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(list),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('Toplu parsel aktarımı çevrimdışı tamamlandı:', err);
+  }
+  return { success: true, count: list.length };
+}
+

@@ -14,8 +14,9 @@ interface PointFormModalProps {
   editingPoint: RailwayPoint | null;
   initialCoords?: { lat: number; lng: number } | null;
   onDelete?: (pointId: string) => void;
-  onPickOnMap?: () => void;
+  onPickOnMap?: (currentDraft?: any) => void;
   allExistingLines?: string[];
+  initialDraft?: any;
 }
 
 const CATEGORIES: { id: RailwayPointCategory; label: string }[] = [
@@ -38,6 +39,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
   onDelete,
   onPickOnMap,
   allExistingLines = [],
+  initialDraft = null,
 }) => {
   const [title, setTitle] = useState('');
   const [kmValue, setKmValue] = useState('');
@@ -61,6 +63,9 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const prevIsOpenRef = React.useRef(false);
+  const prevEditingIdRef = React.useRef<string | null>(null);
+
   // Load and refresh available custom lines list
   const refreshLinesList = () => {
     const fromStorage = getStoredLines();
@@ -69,50 +74,109 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
     return merged;
   };
 
+  // Only initialize form fields when the modal transitions from closed to open,
+  // or when the editing point ID changes. NEVER re-initialize while user is actively typing!
   useEffect(() => {
+    const currentEditingId = editingPoint ? editingPoint.id : null;
+    const isOpening = isOpen && !prevIsOpenRef.current;
+    const isDifferentPoint = isOpen && currentEditingId !== prevEditingIdRef.current;
+
+    prevIsOpenRef.current = isOpen;
+    prevEditingIdRef.current = currentEditingId;
+
     if (!isOpen) return;
 
-    const currentAvailable = refreshLinesList();
+    if (isOpening || isDifferentPoint) {
+      const currentAvailable = refreshLinesList();
 
-    if (editingPoint) {
-      setTitle(editingPoint.title);
-      const initialKm = editingPoint.kmValue || extractKmFromText(editingPoint.title);
-      setKmValue(initialKm);
-      setLineName(editingPoint.lineName || '');
-      setCategory(editingPoint.category);
-      setLocationDesc(editingPoint.locationDesc || '');
-      setLat(editingPoint.lat.toString());
-      setLng(editingPoint.lng.toString());
-      setDescription(editingPoint.description);
-      setTextStyle(editingPoint.textStyle || DEFAULT_TEXT_STYLE);
-      setTitleTextStyle(editingPoint.titleTextStyle || { ...DEFAULT_TEXT_STYLE, fontWeight: 'bold' });
-      setLevelCrossing(editingPoint.levelCrossing || {});
-      setCulvert(editingPoint.culvert || {});
-      setActiveFormTab(
-        editingPoint.category === 'crossing'
-          ? 'crossing'
-          : editingPoint.category === 'culvert'
-          ? 'culvert'
-          : 'general'
-      );
-    } else {
-      // If we have saved lines, default to the first one or leave empty for user to type
-      if (!lineName && currentAvailable.length > 0) {
-        setLineName(currentAvailable[0]);
+      if (editingPoint) {
+        setTitle(editingPoint.title || '');
+        const initialKm = editingPoint.kmValue || extractKmFromText(editingPoint.title);
+        setKmValue(initialKm || '');
+        setLineName(editingPoint.lineName || currentAvailable[0] || '');
+        setCategory(editingPoint.category || 'km_marker');
+        setLocationDesc(editingPoint.locationDesc || '');
+        setLat(editingPoint.lat !== undefined ? editingPoint.lat.toString() : '');
+        setLng(editingPoint.lng !== undefined ? editingPoint.lng.toString() : '');
+        setDescription(editingPoint.description || '');
+        setTextStyle(editingPoint.textStyle || DEFAULT_TEXT_STYLE);
+        setTitleTextStyle(editingPoint.titleTextStyle || { ...DEFAULT_TEXT_STYLE, fontWeight: 'bold' });
+        setLevelCrossing(editingPoint.levelCrossing || {});
+        setCulvert(editingPoint.culvert || {});
+        setActiveFormTab(
+          editingPoint.category === 'crossing'
+            ? 'crossing'
+            : editingPoint.category === 'culvert'
+            ? 'culvert'
+            : 'general'
+        );
+      } else if (initialDraft) {
+        // Restore from preserved in-flight draft
+        setTitle(initialDraft.title || '');
+        setKmValue(initialDraft.kmValue || '');
+        setLineName(initialDraft.lineName || currentAvailable[0] || '');
+        setCategory(initialDraft.category || 'km_marker');
+        setLocationDesc(initialDraft.locationDesc || '');
+        setDescription(initialDraft.description || '');
+        setTextStyle(initialDraft.textStyle || DEFAULT_TEXT_STYLE);
+        setTitleTextStyle(initialDraft.titleTextStyle || { ...DEFAULT_TEXT_STYLE, fontWeight: 'bold' });
+        setLevelCrossing(initialDraft.levelCrossing || {});
+        setCulvert(initialDraft.culvert || {});
+        setActiveFormTab(
+          initialDraft.category === 'crossing'
+            ? 'crossing'
+            : initialDraft.category === 'culvert'
+            ? 'culvert'
+            : 'general'
+        );
+        if (initialCoords) {
+          setLat(initialCoords.lat.toFixed(6));
+          setLng(initialCoords.lng.toFixed(6));
+        } else if (initialDraft.lat) {
+          setLat(String(initialDraft.lat));
+          setLng(String(initialDraft.lng));
+        }
+      } else {
+        // Clean blank state for brand new point
+        setTitle('');
+        setKmValue('');
+        setLocationDesc('');
+        setDescription('');
+        setTextStyle(DEFAULT_TEXT_STYLE);
+        setTitleTextStyle({ ...DEFAULT_TEXT_STYLE, fontWeight: 'bold' });
+        setLevelCrossing({});
+        setCulvert({});
+        setActiveFormTab('general');
+        setCategory('km_marker');
+        if (currentAvailable.length > 0) {
+          setLineName(currentAvailable[0]);
+        }
+        if (initialCoords) {
+          setLat(initialCoords.lat.toFixed(6));
+          setLng(initialCoords.lng.toFixed(6));
+        } else {
+          setLat('');
+          setLng('');
+        }
       }
-      setLevelCrossing({});
-      setCulvert({});
-      setActiveFormTab('general');
-      // If we just got initialCoords (e.g. from map click), update lat/lng without erasing what user already typed!
-      if (initialCoords) {
-        setLat(initialCoords.lat.toFixed(6));
-        setLng(initialCoords.lng.toFixed(6));
-      }
+      setFormError('');
+      setIsAddingNewLine(false);
+      setNewLineInput('');
     }
-    setFormError('');
-    setIsAddingNewLine(false);
-    setNewLineInput('');
-  }, [editingPoint, initialCoords, isOpen, allExistingLines]);
+  }, [isOpen, editingPoint?.id, initialDraft]);
+
+  // When initialCoords updates while modal is open, only update lat/lng coordinates without wiping other fields
+  useEffect(() => {
+    if (isOpen && initialCoords) {
+      setLat(initialCoords.lat.toFixed(6));
+      setLng(initialCoords.lng.toFixed(6));
+    }
+  }, [initialCoords?.lat, initialCoords?.lng, isOpen]);
+
+  // Update line list if allExistingLines changes without affecting input values
+  useEffect(() => {
+    refreshLinesList();
+  }, [allExistingLines]);
 
   const handleAddNewLine = () => {
     const trimmed = newLineInput.trim();
@@ -124,23 +188,42 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
     setIsAddingNewLine(false);
   };
 
-  // Auto-fill title if empty when typing KM, or extract KM if user types title
+  // Auto-suggest title only if title is completely empty, never overwrite user text!
   const handleKmChange = (val: string) => {
     setKmValue(val);
-    if (!editingPoint && (!title || title.startsWith('KM '))) {
-      setTitle(val ? `KM ${val}` : '');
+    if (!editingPoint && !title.trim() && val.trim()) {
+      setTitle(`KM ${val}`);
     }
   };
 
   const handleTitleChange = (val: string) => {
     setTitle(val);
-    // If kmValue is empty, auto-detect KM from title
-    if (!kmValue.trim()) {
+    // Auto-detect KM only if KM field is completely empty
+    if (!kmValue.trim() && val.trim()) {
       const detected = extractKmFromText(val);
       if (detected) {
         setKmValue(detected);
       }
     }
+  };
+
+  const handleTriggerPickOnMap = () => {
+    if (!onPickOnMap) return;
+    const currentDraft = {
+      title,
+      kmValue,
+      lineName,
+      category,
+      locationDesc,
+      lat,
+      lng,
+      description,
+      textStyle,
+      titleTextStyle,
+      levelCrossing,
+      culvert,
+    };
+    onPickOnMap(currentDraft);
   };
 
   // Get current GPS
@@ -168,8 +251,8 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
     e.preventDefault();
     setFormError('');
 
-    const parsedLat = parseFloat(lat);
-    const parsedLng = parseFloat(lng);
+    const parsedLat = parseFloat((lat || '').trim().replace(',', '.'));
+    const parsedLng = parseFloat((lng || '').trim().replace(',', '.'));
 
     if (!title.trim()) {
       setFormError('Lütfen bir başlık veya KM adı giriniz.');
@@ -235,19 +318,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
   };
 
   const handleModalClose = () => {
-    if (!editingPoint) {
-      setTitle('');
-      setKmValue('');
-      setLocationDesc('');
-      setDescription('');
-      setLat('');
-      setLng('');
-      setIsAddingNewLine(false);
-      setNewLineInput('');
-      setLevelCrossing({});
-      setCulvert({});
-      setActiveFormTab('general');
-    }
+    setFormError('');
     onClose();
   };
 
@@ -257,7 +328,14 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
     <div
       id="point-form-modal"
       className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
-      onClick={handleModalClose}
+      onClick={(e) => {
+        // Prevent accidental backdrop click closure while filling in fields
+        if (e.target === e.currentTarget) {
+          if (!title.trim() && !kmValue.trim() && !description.trim()) {
+            handleModalClose();
+          }
+        }
+      }}
     >
       <div
         className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden my-6"
@@ -274,7 +352,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
           <button
             id="modal-close-btn"
             onClick={handleModalClose}
-            className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+            className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -308,7 +386,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
               <button
                 id="form-top-pick-map-btn"
                 type="button"
-                onClick={onPickOnMap}
+                onClick={handleTriggerPickOnMap}
                 className="shrink-0 bg-amber-400 hover:bg-amber-300 active:scale-95 text-slate-950 text-xs font-extrabold px-3 py-2 rounded-xl border border-amber-500 shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
               >
                 <Crosshair className="w-3.5 h-3.5" />
@@ -559,7 +637,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
                   <button
                     id="form-pick-on-map-btn"
                     type="button"
-                    onClick={onPickOnMap}
+                    onClick={handleTriggerPickOnMap}
                     className="text-xs text-amber-950 font-bold flex items-center gap-1.5 bg-amber-400 hover:bg-amber-300 active:scale-95 px-2.5 py-1.5 rounded-lg border border-amber-500 shadow-sm transition-all cursor-pointer"
                     title="Modalı kapatıp haritada istediğiniz yere tıklayarak koordinatı otomatik alın"
                   >
@@ -1019,7 +1097,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
                     <input
                       type="text"
                       placeholder="Örn: Esk.-Konya"
-                      value={culvert.hatti || lineName || ''}
+                      value={culvert.hatti !== undefined ? culvert.hatti : lineName}
                       onChange={(e) => setCulvert((prev) => ({ ...prev, hatti: e.target.value }))}
                       className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
                     />
@@ -1034,7 +1112,7 @@ export const PointFormModal: React.FC<PointFormModalProps> = ({
                     <input
                       type="text"
                       placeholder="Örn: 54+673"
-                      value={culvert.mihverKlm || kmValue || ''}
+                      value={culvert.mihverKlm !== undefined ? culvert.mihverKlm : kmValue}
                       onChange={(e) => setCulvert((prev) => ({ ...prev, mihverKlm: e.target.value }))}
                       className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
                     />

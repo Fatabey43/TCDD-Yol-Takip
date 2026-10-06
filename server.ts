@@ -35,6 +35,7 @@ const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const STATE_FILE = path.join(DATA_DIR, 'database_state.json');
 const LOGS_FILE = path.join(DATA_DIR, 'audit_logs.json');
 const TAKYIDAT_FILE = path.join(DATA_DIR, 'takyidat_restrictions.json');
+const PARCELS_FILE = path.join(DATA_DIR, 'railway_parcels.json');
 const AUTH_SECRET = process.env.AUTH_SECRET || 'tcdd-demiryolu-auth-secret-key-2026';
 
 // Audit Log Interface & Helpers
@@ -1041,6 +1042,7 @@ app.post('/api/points', (req, res) => {
     textStyle: textStyle || null,
     titleTextStyle: titleTextStyle || null,
     levelCrossing: req.body.levelCrossing || null,
+    culvert: req.body.culvert || null,
     notes: Array.isArray(notes) ? notes : [],
     photos: Array.isArray(photos) ? photos : [],
     createdAt: createdAt || new Date().toISOString(),
@@ -1078,6 +1080,7 @@ app.put('/api/points/:id', (req, res) => {
       textStyle: req.body.textStyle || null,
       titleTextStyle: req.body.titleTextStyle || null,
       levelCrossing: req.body.levelCrossing || null,
+      culvert: req.body.culvert || null,
       notes: Array.isArray(req.body.notes) ? req.body.notes : [],
       photos: Array.isArray(req.body.photos) ? req.body.photos : [],
       createdAt: req.body.createdAt || new Date().toISOString(),
@@ -1531,6 +1534,112 @@ app.delete('/api/takyidat/:id', (req, res) => {
 
   notifyPointsChanged('takyidat_changed');
   res.json({ success: true, message: 'Takyidat kaydı silindi' });
+});
+
+// ---------------- TAPU KADASTRO & İSTİMLAK (PARSELS) API ----------------
+function getParcels(): any[] {
+  try {
+    if (fs.existsSync(PARCELS_FILE)) {
+      const raw = fs.readFileSync(PARCELS_FILE, 'utf-8');
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) return list;
+    }
+  } catch (err) {
+    console.error('Error reading parcels file:', err);
+  }
+  return [];
+}
+
+function saveParcels(list: any[]) {
+  try {
+    fs.writeFileSync(PARCELS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving parcels file:', err);
+  }
+}
+
+// GET /api/parcels
+app.get('/api/parcels', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  const parcels = getParcels();
+  res.json(parcels);
+});
+
+// POST /api/parcels (create or replace multiple parcels)
+app.post('/api/parcels', (req, res) => {
+  const body = req.body;
+  const list = getParcels();
+
+  if (Array.isArray(body)) {
+    saveParcels(body);
+    notifyPointsChanged('parcels_changed');
+    return res.json({ success: true, count: body.length });
+  }
+
+  const newParcel = {
+    id: body.id || `parsel-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    il: body.il || 'Eskişehir',
+    ilce: body.ilce || 'Sivrihisar',
+    mahalleKoy: body.mahalleKoy || 'Dümrek',
+    adaNo: String(body.adaNo || '101'),
+    parselNo: String(body.parselNo || '1'),
+    nitelik: body.nitelik || 'Demiryolu Güzergahı ve Müştemilatı',
+    alanM2: Number(body.alanM2) || 25000,
+    paftaNo: body.paftaNo || '',
+    malik: body.malik || 'TCDD İşletmesi Genel Müdürlüğü',
+    startKm: body.startKm || '',
+    endKm: body.endKm || '',
+    lineName: body.lineName || 'Eskişehir-Konya',
+    kamulastirmaGenisligiMetre: Number(body.kamulastirmaGenisligiMetre) || 30,
+    coordinates: body.coordinates || [],
+    notes: body.notes || '',
+    tkgmUrl: body.tkgmUrl || '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  list.push(newParcel);
+  saveParcels(list);
+  notifyPointsChanged('parcels_changed');
+  res.status(201).json(newParcel);
+});
+
+// PUT /api/parcels/:id
+app.put('/api/parcels/:id', (req, res) => {
+  const { id } = req.params;
+  const list = getParcels();
+  const index = list.findIndex((p: any) => p.id === id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: 'Kadastro parseli bulunamadı' });
+  }
+
+  const updated = {
+    ...list[index],
+    ...req.body,
+    id: list[index].id,
+    updatedAt: new Date().toISOString(),
+  };
+
+  list[index] = updated;
+  saveParcels(list);
+  notifyPointsChanged('parcels_changed');
+  res.json(updated);
+});
+
+// DELETE /api/parcels/:id
+app.delete('/api/parcels/:id', (req, res) => {
+  const { id } = req.params;
+  const list = getParcels();
+  const filtered = list.filter((p: any) => p.id !== id);
+
+  if (filtered.length === list.length) {
+    return res.status(404).json({ error: 'Kadastro parseli bulunamadı' });
+  }
+
+  saveParcels(filtered);
+  notifyPointsChanged('parcels_changed');
+  res.json({ success: true, message: 'Kadastro parseli silindi' });
 });
 
 // POST reset: cleans all points and keeps default points blacklisted

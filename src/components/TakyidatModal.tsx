@@ -78,8 +78,8 @@ export const TakyidatModal: React.FC<TakyidatModalProps> = ({
   // Form states
   const [startKm, setStartKm] = useState('54+000');
   const [endKm, setEndKm] = useState('55+000');
-  const [speedLimit, setSpeedLimit] = useState<number>(30);
-  const [normalSpeed, setNormalSpeed] = useState<number>(120);
+  const [speedLimit, setSpeedLimit] = useState<number | string>(30);
+  const [normalSpeed, setNormalSpeed] = useState<number | string>(120);
   const [lineName, setLineName] = useState<string>(availableLines[0] || 'Eskişehir-Konya');
   const [reason, setReason] = useState('Yol bakım ve balast takviyesi çalışması');
   const [status, setStatus] = useState<'active' | 'planned' | 'lifted'>('active');
@@ -142,8 +142,8 @@ export const TakyidatModal: React.FC<TakyidatModalProps> = ({
   const getCurrentDraft = (): TakyidatFormDraft => ({
     startKm,
     endKm,
-    speedLimit,
-    normalSpeed,
+    speedLimit: Number(speedLimit) || 30,
+    normalSpeed: Number(normalSpeed) || 120,
     lineName,
     reason,
     status,
@@ -661,7 +661,7 @@ export const TakyidatModal: React.FC<TakyidatModalProps> = ({
                       max={250}
                       step={5}
                       value={speedLimit}
-                      onChange={(e) => setSpeedLimit(Number(e.target.value))}
+                      onChange={(e) => setSpeedLimit(e.target.value === '' ? '' : Number(e.target.value))}
                       className="w-full bg-red-50 border-2 border-red-400 rounded-xl px-3 py-2 text-sm font-black font-mono text-red-950 focus:ring-2 focus:ring-red-500 focus:outline-hidden shadow-2xs"
                     />
                     <span className="absolute right-3 top-2.5 text-xs font-bold text-red-700">km/s</span>
@@ -679,7 +679,7 @@ export const TakyidatModal: React.FC<TakyidatModalProps> = ({
                       max={300}
                       step={5}
                       value={normalSpeed}
-                      onChange={(e) => setNormalSpeed(Number(e.target.value))}
+                      onChange={(e) => setNormalSpeed(e.target.value === '' ? '' : Number(e.target.value))}
                       className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 focus:outline-hidden shadow-2xs"
                     />
                     <span className="absolute right-3 top-2.5 text-xs font-bold text-slate-400">km/s</span>

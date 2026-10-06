@@ -173,3 +173,37 @@ export interface TakyidatSpeedRestriction {
   updatedAt: string;
 }
 
+/**
+ * TCDD Demiryolu Arazisi & Tapu Kadastro (İstimlak / Kamulaştırma) Parseli
+ */
+export interface RailwayParcel {
+  id: string;
+  il: string; // e.g. "Eskişehir" veya "Konya"
+  ilce: string; // e.g. "Sivrihisar" veya "Kadınhanı"
+  mahalleKoy: string; // e.g. "Kolukısa" veya "Dümrek"
+  adaNo: string; // e.g. "104"
+  parselNo: string; // e.g. "1"
+  nitelik: string; // e.g. "Demiryolu ve Müştemilatı" veya "TCDD İstimlak Sahası"
+  alanM2: number; // e.g. 48250
+  paftaNo?: string; // e.g. "K28-d-04-c"
+  malik: string; // e.g. "TCDD İşletmesi Genel Müdürlüğü" veya "Maliye Hazinesi"
+  startKm?: string; // e.g. "54+000"
+  endKm?: string; // e.g. "55+200"
+  startKmNum?: number;
+  endKmNum?: number;
+  lineName?: string; // e.g. "Eskişehir-Konya"
+  kamulastirmaGenisligiMetre?: number; // e.g. 30 (hat ekseninden 15m sağ + 15m sol)
+  coordinates: [number, number][]; // LatLng poligon köşe koordinatları [[lat, lng], ...]
+  ownershipStatus?: 'tcdd' | 'treasury' | 'expropriating' | 'easement' | 'disputed'; // Mülkiyet durumu
+  encroachmentStatus?: 'none' | 'suspected' | 'verified'; // İşgal / Tecavüz durumu
+  encroachmentNote?: string; // İşgal detayı (tarımsal ekim, kaçak yapı vb.)
+  zeminTipi?: string; // Zemin cinsi / pafta niteliği
+  contactPerson?: string; // İrtibat / Sorumlu Emlak Şefi
+  protocolNo?: string; // Protokol / İstimlak Dosya No
+  notes?: string;
+  tkgmUrl?: string; // Doğrudan TKGM Parsel Sorgu linki
+  createdAt: string;
+  updatedAt: string;
+}
+
+
