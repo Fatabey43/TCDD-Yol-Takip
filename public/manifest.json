@@ -3,13 +3,25 @@
   "name": "TCDD KM TAKİP",
   "short_name": "TCDD KM",
   "description": "TCDD 712 Şefliği Demiryolu kilometre noktası takibi, navigasyon, saha notları ve fotoğraf kayıt sistemi.",
-  "theme_color": "#0f172a",
-  "background_color": "#0f172a",
+  "theme_color": "#ffffff",
+  "background_color": "#ffffff",
   "display": "standalone",
   "orientation": "any",
   "start_url": "/",
   "scope": "/",
   "icons": [
+    {
+      "src": "/tcdd_logo_badge.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/tcdd_logo_badge.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
     {
       "src": "/pwa-192x192.png",
       "sizes": "192x192",
@@ -21,12 +33,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
-    },
-    {
-      "src": "/pwa-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
     }
   ]
 }

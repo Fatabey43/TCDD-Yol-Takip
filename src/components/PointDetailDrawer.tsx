@@ -362,23 +362,20 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
           md:bottom-4 md:right-4 md:left-auto md:w-[480px] lg:w-[530px] md:max-h-[calc(100vh-100px)] md:rounded-2xl md:border md:border-slate-200/90
         `}
       >
-        {/* Drawer Drag/Header Handle - High-Tech TCDD Command Bar */}
-        <div className="flex items-center justify-between px-4 sm:px-5 py-2.5 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white border-b border-slate-800 md:rounded-t-2xl shadow-sm">
+        {/* Drawer Drag/Header Handle - Official TCDD Institutional Header Bar */}
+        <div className="flex items-center justify-between px-4 sm:px-5 py-2.5 bg-slate-50 text-slate-800 border-b border-slate-200 md:rounded-t-2xl">
           <div className="flex items-center gap-2.5 min-w-0">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-            </span>
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 ring-2 ring-emerald-200 shrink-0" />
             <div className="flex flex-col min-w-0">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-sky-400 leading-none">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-red-700 leading-none">
                 TCDD 712 ŞEFLİĞİ • SAHA BİLGİ SİSTEMİ
               </span>
-              <span className="text-xs font-bold text-slate-200 truncate">
+              <span className="text-xs font-bold text-slate-900 truncate">
                 Demiryolu Nokta Detayı
               </span>
             </div>
             <span
-              className="text-xs font-mono px-2.5 py-0.5 rounded-lg font-black notranslate shadow-sm shrink-0 border border-white/20"
+              className="text-xs font-mono px-2.5 py-0.5 rounded-md font-bold notranslate shadow-xs shrink-0"
               translate="no"
               style={{ backgroundColor: conf.bg, color: conf.text || '#ffffff' }}
             >
@@ -390,7 +387,7 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
             <button
               id="drawer-toggle-expand-btn"
               onClick={() => setIsExpanded(!isExpanded)}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              className="p-1.5 text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
               title={isExpanded ? 'Detayları Küçült' : 'Detayları Genişlet'}
             >
               {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
@@ -398,7 +395,7 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
             <button
               id="drawer-close-btn"
               onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
               title="Kapat"
             >
               <X className="w-4 h-4" />

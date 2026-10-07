@@ -72,11 +72,11 @@ export const MobileActionsDrawer: React.FC<MobileActionsDrawerProps> = ({
         {/* Drag handle & close */}
         <div className="flex items-center justify-between pb-2 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl overflow-hidden border border-red-500/50 flex items-center justify-center shadow-md shrink-0">
+            <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-300 flex items-center justify-center shadow-xs shrink-0 bg-white">
               <img
-                src="/pwa-192x192.png"
-                alt="TCDD Lokomotif"
-                className="w-full h-full object-cover"
+                src="/tcdd_logo_badge.svg"
+                alt="TCDD Takip 712 Kısım Şefliği Logo"
+                className="w-full h-full object-contain"
               />
             </div>
             <div>

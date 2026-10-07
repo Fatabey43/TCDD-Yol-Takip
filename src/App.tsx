@@ -1283,11 +1283,11 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 relative flex overflow-hidden pb-14 sm:pb-0">
+      <main className="flex-1 relative flex overflow-hidden pb-14 sm:pb-0 bg-slate-50">
         {loading ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 bg-slate-900 text-white">
-            <Loader2 className="w-8 h-8 animate-spin text-sky-400" />
-            <p className="text-sm font-medium">Demiryolu KM Verileri Yükleniyor...</p>
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 bg-slate-50 text-slate-800">
+            <Loader2 className="w-8 h-8 animate-spin text-red-600" />
+            <p className="text-sm font-bold text-slate-700">Demiryolu KM Verileri Yükleniyor...</p>
           </div>
         ) : (
           <>
@@ -1344,16 +1344,18 @@ export default function App() {
                 liveGpsCoords={liveGpsCoords}
               />
 
-              {/* Toggle Sidebar Button for Desktop */}
-              <button
-                id="toggle-sidebar-btn"
-                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                title={isSidebarOpen ? 'Listeyi Gizle' : 'Listeyi Göster'}
-                className="hidden sm:flex absolute top-4 left-4 z-20 bg-white/95 backdrop-blur-sm text-slate-700 hover:text-slate-950 p-2.5 rounded-xl shadow-md border border-slate-200/80 transition-colors"
-                style={{ left: isSidebarOpen ? 'calc(1rem + 2px)' : '1rem' }}
-              >
-                <List className="w-4 h-4" />
-              </button>
+              {/* Toggle Sidebar Button for Desktop - Clean White Institutional Pill */}
+              {!isSidebarOpen && (
+                <button
+                  id="toggle-sidebar-btn"
+                  onClick={() => setIsSidebarOpen(true)}
+                  title="Nokta Listesini Göster"
+                  className="hidden sm:flex absolute top-3 left-3 z-20 bg-white text-slate-800 hover:text-slate-950 px-3 py-2 rounded-lg shadow-sm border border-slate-200 transition-colors cursor-pointer items-center gap-2 text-xs font-semibold"
+                >
+                  <List className="w-4 h-4 text-red-600" />
+                  <span>Kayıtlı Noktalar ({filteredPoints.length})</span>
+                </button>
+              )}
             </div>
           </>
         )}
@@ -1599,15 +1601,15 @@ export default function App() {
       {!isInstallBannerDismissed && (
         <div
           id="floating-install-banner"
-          className="fixed bottom-16 sm:bottom-6 left-3 sm:left-6 z-30 bg-slate-900/95 backdrop-blur-md text-white border border-slate-700/80 rounded-2xl p-3 sm:p-3.5 shadow-2xl max-w-sm flex items-center justify-between gap-3 animate-in slide-in-from-bottom-6 duration-300"
+          className="fixed bottom-16 sm:bottom-6 left-3 sm:left-6 z-30 bg-white text-slate-800 border border-slate-200 rounded-xl p-3 sm:p-3.5 shadow-xl max-w-sm flex items-center justify-between gap-3"
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center flex-shrink-0 shadow-md">
-              <Smartphone className="w-5 h-5 text-white" />
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center flex-shrink-0 text-emerald-600">
+              <Smartphone className="w-4 h-4" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-bold text-white truncate">Uygulama Olarak İndir</p>
-              <p className="text-[11px] text-slate-300 leading-tight">Telefona veya masaüstüne simge ekleyin</p>
+              <p className="text-xs font-bold text-slate-900 truncate">Uygulama Olarak Kullan</p>
+              <p className="text-[11px] text-slate-500 leading-tight">Telefona veya masaüstüne ekleyin</p>
             </div>
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -1620,7 +1622,7 @@ export default function App() {
                   setIsMobileInstallOpen(true);
                 }
               }}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-xs transition-colors cursor-pointer"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-xs transition-colors cursor-pointer"
             >
               Yükle
             </button>
@@ -1632,7 +1634,7 @@ export default function App() {
                   localStorage.setItem('tcdd_install_banner_dismissed', 'true');
                 } catch {}
               }}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
               title="Kapat"
             >
               <X className="w-4 h-4" />
@@ -1641,13 +1643,13 @@ export default function App() {
         </div>
       )}
 
-      {/* Toast Notification Notification Pill */}
+      {/* Toast Notification Pill - Official Clean White Banner */}
       {toastMessage && (
         <div
           id="toast-notification"
-          className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 text-white px-4 py-2.5 rounded-full shadow-2xl border border-slate-700 text-xs font-semibold flex items-center gap-2 animate-bounce"
+          className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-white text-slate-800 px-4 py-2.5 rounded-xl shadow-xl border border-slate-200 text-xs font-semibold flex items-center gap-2"
         >
-          <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-200"></span>
           <span>{toastMessage}</span>
         </div>
       )}

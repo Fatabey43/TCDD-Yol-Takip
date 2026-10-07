@@ -81,11 +81,11 @@ export const MobileInstallModal: React.FC<MobileInstallModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg overflow-hidden border border-red-500/50 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-300 flex items-center justify-center bg-white shrink-0 shadow-xs">
               <img
-                src="/pwa-192x192.png"
-                alt="TCDD Lokomotif"
-                className="w-full h-full object-cover"
+                src="/tcdd_logo_badge.svg"
+                alt="TCDD Takip 712 Kısım Şefliği Logo"
+                className="w-full h-full object-contain"
               />
             </div>
             <div>

@@ -1057,12 +1057,13 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
       const userIcon = L.divIcon({
         html: `
           <div class="relative flex items-center justify-center">
-            <div class="absolute -inset-2.5 rounded-full bg-blue-500/30 animate-ping"></div>
-            <div class="w-4 h-4 bg-blue-600 rounded-full border-2 border-white shadow-md ring-2 ring-blue-400"></div>
+            <div class="w-5 h-5 rounded-full bg-blue-500/20 ring-4 ring-blue-400/40 flex items-center justify-center">
+              <div class="w-3.5 h-3.5 bg-blue-600 rounded-full border-2 border-white shadow-sm"></div>
+            </div>
           </div>
         `,
         className: 'user-location-marker',
-        iconSize: [16, 16],
+        iconSize: [20, 20],
       });
 
       userMarkerRef.current = L.marker([lat, lng], { icon: userIcon })
@@ -1082,19 +1083,19 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 
       {/* Mode Banner when Takyidat Pick Mode is Active */}
       {isTakyidatPickMode && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-gradient-to-r from-red-700 via-amber-600 to-red-800 text-white px-5 py-3 rounded-2xl font-bold text-xs sm:text-sm shadow-2xl flex items-center gap-3 border-2 border-amber-300 ring-4 ring-red-500/20 animate-in fade-in slide-in-from-top-4 duration-200 max-w-[95vw]">
-          <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-            <Gauge className="w-5 h-5 text-white" />
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 bg-white text-slate-800 px-4 py-2.5 rounded-xl font-bold text-xs shadow-lg flex items-center gap-3 border border-rose-300 ring-2 ring-rose-500/10 max-w-[95vw]">
+          <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
+            <Gauge className="w-4 h-4 text-rose-600" />
           </div>
           <div className="flex flex-col text-left">
-            <span className="text-[13px] sm:text-sm font-extrabold text-white leading-tight">
+            <span className="text-xs font-bold text-slate-900 leading-tight">
               {isTakyidatPickMode === 'start' && 'Takyidat Başlangıç KM için demiryoluna veya noktaya tıklayın'}
               {isTakyidatPickMode === 'end' && 'Takyidat Bitiş KM için demiryoluna veya noktaya tıklayın'}
               {isTakyidatPickMode === 'both' && '1. Aşama: Başlangıç KM için haritaya dokunun'}
               {isTakyidatPickMode === 'both-step2' && '2. Aşama: Bitiş KM için haritada ikinci noktaya dokunun'}
             </span>
-            <span className="text-[11px] font-medium text-amber-100 opacity-95">
-              Tıkladığınız yerin demiryolu KM değeri hesaplanıp Takyidat formuna otomatik işlenecektir
+            <span className="text-[11px] font-normal text-slate-500">
+              Tıkladığınız yerin demiryolu KM değeri hesaplanıp forma aktarılır
             </span>
           </div>
           {onCancelTakyidatPick && (
@@ -1102,10 +1103,9 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
               id="cancel-takyidat-pick-btn"
               type="button"
               onClick={onCancelTakyidatPick}
-              className="ml-2 bg-slate-950/80 hover:bg-slate-950 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer whitespace-nowrap flex items-center gap-1 border border-white/20"
+              className="ml-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap border border-slate-200"
             >
-              <X className="w-3.5 h-3.5" />
-              <span>Vazgeç</span>
+              Vazgeç
             </button>
           )}
         </div>
@@ -1113,16 +1113,16 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 
       {/* Mode Banner when Live Point Pick Mode is Active */}
       {isLivePointPickMode && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-gradient-to-r from-sky-600 to-blue-700 text-white px-5 py-3 rounded-2xl font-bold text-xs sm:text-sm shadow-2xl flex items-center gap-3 border-2 border-sky-300 ring-4 ring-sky-500/20 animate-in fade-in slide-in-from-top-4 duration-200">
-          <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-            <Crosshair className="w-5 h-5 text-white animate-spin" style={{ animationDuration: '6s' }} />
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 bg-white text-slate-800 px-4 py-2.5 rounded-xl font-bold text-xs shadow-lg flex items-center gap-3 border border-sky-300 ring-2 ring-sky-500/10">
+          <div className="w-7 h-7 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center shrink-0 border border-sky-200">
+            <Crosshair className="w-4 h-4 text-sky-600" />
           </div>
           <div className="flex flex-col text-left">
-            <span className="text-[13px] sm:text-sm font-extrabold text-white leading-tight">
+            <span className="text-xs font-bold text-slate-900 leading-tight">
               Canlı Konum İçin Haritada Bir Yere Dokunun
             </span>
-            <span className="text-[11px] font-medium text-sky-100 opacity-90">
-              Dokunduğunuz noktanın koordinatı canlı saha konumu olarak belirlenecektir
+            <span className="text-[11px] font-normal text-slate-500">
+              Dokunduğunuz noktanın koordinatı canlı saha konumu olarak belirlenir
             </span>
           </div>
           {onCancelLivePointPick && (
@@ -1130,7 +1130,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
               id="cancel-live-pick-btn"
               type="button"
               onClick={onCancelLivePointPick}
-              className="ml-2 bg-slate-950/80 hover:bg-slate-950 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer whitespace-nowrap"
+              className="ml-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap border border-slate-200"
             >
               Kapat
             </button>
@@ -1140,77 +1140,53 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 
       {/* Mode Banner when Add Mode is Active */}
       {isAddMode && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 px-5 py-3 rounded-2xl font-bold text-xs sm:text-sm shadow-2xl flex items-center gap-3 border-2 border-amber-300 ring-4 ring-amber-500/20 animate-in fade-in slide-in-from-top-4 duration-200">
-          <div className="w-8 h-8 rounded-xl bg-slate-950/10 flex items-center justify-center shrink-0">
-            <Crosshair className="w-5 h-5 text-slate-950 animate-spin" style={{ animationDuration: '6s' }} />
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 bg-white text-slate-800 px-4 py-2.5 rounded-xl font-bold text-xs shadow-lg flex items-center gap-3 border border-amber-300 ring-2 ring-amber-500/10">
+          <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 border border-amber-200">
+            <Crosshair className="w-4 h-4 text-amber-600" />
           </div>
           <div className="flex flex-col text-left">
-            <span className="text-[13px] sm:text-sm font-extrabold text-slate-950 leading-tight">
-              Haritada Bir Yere Tıklayın
+            <span className="text-xs font-bold text-slate-900 leading-tight">
+              Haritada İstediğiniz Noktaya Dokunun
             </span>
-            <span className="text-[11px] font-medium text-amber-950 opacity-90">
-              Tıkladığınız yerin konumu ve koordinatları otomatik alınacaktır
+            <span className="text-[11px] font-normal text-slate-500">
+              Tıkladığınız koordinat otomatik olarak nokta formuna aktarılır
             </span>
           </div>
           <button
             id="cancel-add-mode-btn"
             type="button"
             onClick={() => setIsAddMode(false)}
-            className="ml-2 bg-slate-950 hover:bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer"
+            className="ml-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer border border-slate-200"
           >
             İptal
           </button>
         </div>
       )}
 
-      {/* Mode Banner when Measurement Mode is Active */}
+      {/* Interactive Measurement HUD Card (Single Clean Bottom Dock) */}
       {isMeasuring && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-slate-950/90 text-white px-4 py-2 rounded-2xl font-bold text-xs sm:text-sm shadow-2xl flex items-center gap-2.5 border-2 border-emerald-500/80 backdrop-blur-md">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></div>
-          <Ruler className="w-4 h-4 text-emerald-400" />
-          <span>
-            {measurePoints.length === 0
-              ? 'Başlangıç için haritada bir noktaya tıklayın'
-              : 'Mouse\'u hareket ettirin, sabitlemek için tıklayın'}
-          </span>
-          <button
-            id="close-measure-banner-btn"
-            onClick={() => {
-              setIsMeasuring(false);
-              setMeasurePoints([]);
-              setHoverPoint(null);
-            }}
-            className="ml-2 bg-slate-800 hover:bg-rose-950 text-slate-300 hover:text-rose-300 text-xs px-2.5 py-1 rounded-xl transition-colors cursor-pointer border border-slate-700"
-          >
-            Kapat
-          </button>
-        </div>
-      )}
-
-      {/* Interactive Measurement HUD Card (Bottom of Map) */}
-      {isMeasuring && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 backdrop-blur-md text-white px-4 sm:px-6 py-3 rounded-2xl shadow-2xl border border-emerald-500/40 flex flex-col sm:flex-row items-center gap-4 max-w-[95vw]">
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 bg-white text-slate-800 px-4 py-3 rounded-xl shadow-xl border border-slate-200 flex flex-col sm:flex-row items-center gap-4 max-w-[95vw]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 flex-shrink-0">
-              <Ruler className="w-5 h-5" />
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 flex-shrink-0">
+              <Ruler className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-[11px] text-emerald-400 font-semibold uppercase tracking-wider flex items-center gap-1.5">
+              <div className="text-[11px] text-slate-500 font-semibold flex items-center gap-1.5">
                 <span>Canlı Mesafe Ölçer</span>
-                <span className="text-[10px] bg-sky-500/20 text-sky-300 px-1.5 py-0.2 rounded font-mono">
-                  {measurePoints.length} Sabit Nokta {hoverPoint ? '+ Canlı Konum' : ''}
+                <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono border border-slate-200">
+                  {measurePoints.length} Nokta {hoverPoint ? '+ Canlı' : ''}
                 </span>
               </div>
-              <div className="text-lg sm:text-xl font-mono font-bold text-white flex items-center gap-2">
+              <div className="text-base sm:text-lg font-mono font-bold text-slate-900 flex items-center gap-2">
                 <span>
                   {measurementResult.totalMeters > 0
                     ? measurementResult.formatted
                     : measurePoints.length === 0
-                    ? 'Başlangıç noktasını seçin...'
-                    : 'Mouse\'u gezdirin...'}
+                    ? 'Haritadan ilk noktayı seçin'
+                    : 'Mouse ile mesafeyi ölçün'}
                 </span>
                 {hoverPoint && currentLiveSegment && (
-                  <span className="text-xs font-mono font-normal text-sky-300 bg-sky-950/80 px-2 py-0.5 rounded border border-sky-700/60 hidden sm:inline-block">
+                  <span className="text-xs font-mono font-normal text-sky-700 bg-sky-50 px-2 py-0.5 rounded border border-sky-200 hidden sm:inline-block">
                     + {currentLiveSegment.formatted.shortText}
                   </span>
                 )}
@@ -1218,7 +1194,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {/* Undo last point */}
             <button
               id="measure-undo-btn"
@@ -1227,10 +1203,10 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
               onClick={() => {
                 setMeasurePoints((prev) => prev.slice(0, -1));
               }}
-              className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-xs font-semibold px-3 py-1.5 rounded-xl border border-slate-700 transition-colors cursor-pointer"
+              className="flex items-center gap-1 bg-slate-50 hover:bg-slate-100 disabled:opacity-40 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-700 transition-colors cursor-pointer"
               title="Son Noktayı Geri Al"
             >
-              <Undo2 className="w-3.5 h-3.5 text-amber-400" />
+              <Undo2 className="w-3.5 h-3.5 text-amber-600" />
               <span>Geri Al</span>
             </button>
 
@@ -1243,10 +1219,10 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
                 setMeasurePoints([]);
                 setHoverPoint(null);
               }}
-              className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-xs font-semibold px-3 py-1.5 rounded-xl border border-slate-700 transition-colors cursor-pointer"
+              className="flex items-center gap-1 bg-slate-50 hover:bg-slate-100 disabled:opacity-40 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-700 transition-colors cursor-pointer"
               title="Ölçümü Sıfırla"
             >
-              <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
+              <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
               <span>Sıfırla</span>
             </button>
 
@@ -1259,7 +1235,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
                 setMeasurePoints([]);
                 setHoverPoint(null);
               }}
-              className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3.5 py-1.5 rounded-xl shadow-md transition-colors cursor-pointer"
+              className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-xs transition-colors cursor-pointer"
             >
               <Check className="w-3.5 h-3.5" />
               <span>Tamamla</span>
@@ -1268,356 +1244,241 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
         </div>
       )}
 
-      {/* Map Controls Floating Bar (Top Right) - Organized into nested cards (kutucuk içinde kutucuk) */}
+      {/* Unified Map Controls (Top Right) - Single clean high-performance institutional toolbar */}
       <div className="absolute top-3 right-3 sm:top-4 sm:right-4 z-20 flex flex-col gap-2">
-        {/* Kutu 1: Harita Ölçüm & İşlem Araçları Kutusu */}
-        <div className="bg-white/95 backdrop-blur-md p-1 rounded-2xl shadow-lg border border-slate-200/90 flex flex-col gap-1 items-center">
+        <div className="bg-white p-1 rounded-xl shadow-md border border-slate-200 flex flex-col gap-1 items-center">
           {/* Metre / Mesafe Ölçüm Butonu */}
           <button
             id="map-measure-distance-btn"
             onClick={handleToggleMeasurement}
             title={isMeasuring ? 'Ölçüm Modunu Kapat' : 'Mesafe & Metre Ölçüm Aracı'}
-            className={`p-2 sm:p-2.5 rounded-xl transition-all flex items-center justify-center cursor-pointer ${
+            className={`p-2 rounded-lg transition-colors flex items-center justify-center cursor-pointer ${
               isMeasuring
-                ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-400/50'
-                : 'text-slate-700 hover:text-emerald-600 hover:bg-slate-100'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-slate-700 hover:text-emerald-700 hover:bg-slate-100'
             }`}
           >
             <Ruler className="w-4 h-4" />
           </button>
 
-          {/* Haritadan Tıkla & Ekle Hızlı Butonu */}
+          {/* Akıllı / Tüm KM Etiketleri Geçiş Butonu */}
           <button
-            id="map-click-add-quick-btn"
-            onClick={() => {
-              setIsAddMode(!isAddMode);
-              if (!isAddMode) setIsMeasuring(false);
-            }}
-            title={isAddMode ? 'Tıkla Ekle İptal' : 'Haritadan Tıkla & Ekle'}
-            className={`hidden sm:flex p-2 sm:p-2.5 rounded-xl transition-all items-center justify-center cursor-pointer ${
-              isAddMode
-                ? 'bg-amber-500 text-slate-950 shadow-sm ring-2 ring-amber-400/50'
-                : 'text-slate-700 hover:text-amber-600 hover:bg-slate-100'
+            id="map-toggle-label-mode-btn"
+            onClick={() => setLabelMode((prev) => (prev === 'smart' ? 'all' : 'smart'))}
+            title={
+              labelMode === 'smart'
+                ? 'Akıllı Görünüm Aktif (Uzakta sade kalkan, yakında KM etiketleri) • Tıklayın: Tüm Etiketleri Göster'
+                : 'Tüm KM Etiketleri Aktif • Tıklayın: Akıllı Görünüme Geç'
+            }
+            className={`p-2 rounded-lg transition-colors flex items-center justify-center cursor-pointer ${
+              labelMode === 'smart'
+                ? 'bg-sky-50 text-sky-700 border border-sky-200'
+                : 'text-slate-700 hover:text-sky-700 hover:bg-slate-100'
             }`}
           >
-            <Plus className="w-4 h-4" />
+            <Sparkles className="w-4 h-4" />
           </button>
 
-          {/* Harita ve Noktaları Yenile Butonu */}
-          {onRefresh && (
-            <button
-              id="map-refresh-btn"
-              onClick={onRefresh}
-              disabled={isRefreshing}
-              title="Haritayı ve Noktaları Yenile"
-              className={`hidden sm:flex p-2 sm:p-2.5 rounded-xl transition-all cursor-pointer ${
-                isRefreshing ? 'text-sky-600 animate-spin' : 'text-slate-700 hover:text-sky-600 hover:bg-slate-100'
-              }`}
-            >
-              <RotateCw className="w-4 h-4" />
-            </button>
-          )}
-
-          {/* Takyidat Hız Sınırları & Yol Emirleri Modal Butonu */}
-          {onOpenTakyidat && (
-            <button
-              id="map-takyidat-btn"
-              onClick={onOpenTakyidat}
-              title="TCDD Takyidat & Hız Kısıtlamalarını Gör / Ekle"
-              className={`p-2 sm:p-2.5 rounded-xl transition-all flex items-center justify-center cursor-pointer relative ${
-                takyidatRestrictions.some((r) => r.status === 'active')
-                  ? 'bg-red-600 text-white shadow-sm ring-2 ring-red-400/60'
-                  : 'text-slate-700 hover:text-red-600 hover:bg-red-50'
-              }`}
-            >
-              <Gauge className="w-4 h-4" />
-              {takyidatRestrictions.some((r) => r.status === 'active') && (
-                <span className="absolute -top-1 -right-1 bg-amber-400 text-slate-950 text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-white">
-                  {takyidatRestrictions.filter((r) => r.status === 'active').length}
-                </span>
-              )}
-            </button>
-          )}
-
-          {/* Demiryolu Arazisi & Kadastro Modal Butonu */}
-          {onOpenParcels && (
-            <button
-              id="map-parcels-btn"
-              onClick={onOpenParcels}
-              title={`TCDD Demiryolu Arazisi & Kadastro Parselleri (${railwayParcels.length})`}
-              className={`p-2 sm:p-2.5 rounded-xl transition-all flex items-center justify-center cursor-pointer relative ${
-                railwayParcels.length > 0
-                  ? 'text-indigo-700 hover:text-indigo-950 hover:bg-indigo-50'
-                  : 'text-slate-700 hover:text-indigo-600 hover:bg-slate-100'
-              }`}
-            >
-              <Landmark className="w-4 h-4" />
-              {railwayParcels.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-white">
-                  {railwayParcels.length}
-                </span>
-              )}
-            </button>
-          )}
-
-          {/* Fit all points */}
+          {/* Tüm Noktaları Ekrana Sığdır */}
           <button
             id="map-fit-all-btn"
             onClick={handleFitAll}
             title="Tüm Noktaları Ekrana Sığdır"
-            className="p-2 sm:p-2.5 text-slate-700 hover:text-slate-950 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+            className="p-2 text-slate-700 hover:text-slate-950 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
           >
             <Maximize2 className="w-4 h-4" />
           </button>
 
-          {/* Locate user */}
+          {/* Mevcut GPS Konumuma Git */}
           <button
             id="map-locate-btn"
             onClick={handleLocateMe}
             title="Mevcut Konumuma Git"
             disabled={isLocating}
-            className={`p-2 sm:p-2.5 rounded-xl transition-colors cursor-pointer ${
-              isLocating ? 'text-blue-500 animate-pulse' : 'text-slate-700 hover:text-blue-600 hover:bg-slate-100'
+            className={`p-2 rounded-lg transition-colors cursor-pointer ${
+              isLocating ? 'text-sky-600 animate-spin' : 'text-slate-700 hover:text-sky-600 hover:bg-slate-100'
             }`}
           >
             <Locate className="w-4 h-4" />
           </button>
-        </div>
 
-        {/* Kutu 2: Görünüm & Katmanlar Kutusu */}
-        <div className="bg-white/95 backdrop-blur-md p-1 rounded-2xl shadow-lg border border-slate-200/90 flex flex-col gap-1 items-center">
-          {/* Google Earth Hızlı Aç / Kapat Butonu */}
-          <button
-            id="map-google-earth-quick-btn"
-            onClick={() => {
-              setMapType(isGoogleEarthActive ? 'streets' : 'google-earth');
-            }}
-            title={
-              isGoogleEarthActive
-                ? 'Google Earth Uydu Modu Aktif (Standart Haritaya Geç)'
-                : 'Google Earth Uydu Haritasına Geç'
-            }
-            className={`p-2 sm:p-2.5 rounded-xl transition-all flex items-center justify-center cursor-pointer ${
-              isGoogleEarthActive
-                ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-400/50'
-                : 'text-slate-700 hover:text-emerald-600 hover:bg-slate-100'
-            }`}
-          >
-            <Globe className="w-4 h-4" />
-          </button>
-
-          {/* Layer Selector */}
+          {/* Katman & Uydu Menüsü */}
           <div className="relative group">
             <button
               id="map-layers-toggle-btn"
               title="Harita Katmanları & Google Earth"
-              className="p-2 sm:p-2.5 text-slate-700 hover:text-slate-950 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              className={`p-2 rounded-lg transition-colors cursor-pointer ${
+                isGoogleEarthActive
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : 'text-slate-700 hover:text-slate-950 hover:bg-slate-100'
+              }`}
             >
               <Layers className="w-4 h-4" />
             </button>
 
-          <div className="hidden group-hover:flex flex-col gap-1.5 absolute right-0 top-0 p-3 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 min-w-[240px] text-xs z-40 animate-in fade-in zoom-in-95 duration-150">
-            <div className="font-bold text-slate-800 pb-1.5 border-b border-slate-200/80 flex items-center justify-between">
-              <span>Harita &amp; Uydu Katmanı</span>
-              <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded font-semibold border border-emerald-200">
-                Google Earth
-              </span>
-            </div>
-
-            {/* Google Earth Hybrid */}
-            <button
-              id="map-layer-google-earth-btn"
-              onClick={() => setMapType('google-earth')}
-              className={`text-left px-2.5 py-2 rounded-xl transition-colors flex items-center justify-between cursor-pointer ${
-                mapType === 'google-earth'
-                  ? 'bg-emerald-50 text-emerald-800 font-bold border border-emerald-200'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Globe className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Google Earth (Hibrit)</span>
-              </div>
-              {mapType === 'google-earth' && (
-                <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-              )}
-            </button>
-
-            {/* Google Earth Pure Satellite */}
-            <button
-              id="map-layer-google-satellite-btn"
-              onClick={() => setMapType('google-satellite')}
-              className={`text-left px-2.5 py-2 rounded-xl transition-colors flex items-center justify-between cursor-pointer ${
-                mapType === 'google-satellite'
-                  ? 'bg-emerald-50 text-emerald-800 font-bold border border-emerald-200'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Globe className="w-3.5 h-3.5 text-teal-600" />
-                <span>Google Earth (Saf Uydu)</span>
-              </div>
-              {mapType === 'google-satellite' && (
-                <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-              )}
-            </button>
-
-            {/* Standard OSM Street */}
-            <button
-              id="map-layer-street-btn"
-              onClick={() => setMapType('streets')}
-              className={`text-left px-2.5 py-2 rounded-xl transition-colors flex items-center justify-between cursor-pointer ${
-                mapType === 'streets'
-                  ? 'bg-sky-50 text-sky-800 font-bold border border-sky-200'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Train className="w-3.5 h-3.5 text-sky-600" />
-                <span>Standart Harita (OSM)</span>
-              </div>
-              {mapType === 'streets' && (
-                <span className="w-2 h-2 rounded-full bg-sky-600"></span>
-              )}
-            </button>
-
-            {/* Esri World Imagery */}
-            <button
-              id="map-layer-esri-satellite-btn"
-              onClick={() => setMapType('esri-satellite')}
-              className={`text-left px-2.5 py-2 rounded-xl transition-colors flex items-center justify-between cursor-pointer ${
-                mapType === 'esri-satellite'
-                  ? 'bg-slate-100 text-slate-900 font-bold border border-slate-300'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Globe className="w-3.5 h-3.5 text-slate-500" />
-                <span>Esri Dünya Uydu</span>
-              </div>
-              {mapType === 'esri-satellite' && (
-                <span className="w-2 h-2 rounded-full bg-slate-700"></span>
-              )}
-            </button>
-
-            {/* Marker Layout & Overlays Section */}
-            <div className="pt-2 border-t border-slate-100 space-y-1">
-              {/* Smart Railway Layout Toggle */}
-              <label className="flex items-center justify-between cursor-pointer select-none text-sky-900 py-1 font-bold bg-sky-50/80 px-2 rounded-lg border border-sky-200/60 hover:bg-sky-50 transition-colors">
-                <span className="flex items-center gap-1.5 text-xs">
-                  <Sparkles className="w-3.5 h-3.5 text-sky-600" />
-                  <span>Akıllı Ray Düzeni</span>
+            <div className="hidden group-hover:flex flex-col gap-1.5 absolute right-0 top-0 p-3 bg-white rounded-xl shadow-xl border border-slate-200 min-w-[240px] text-xs z-40">
+              <div className="font-bold text-slate-800 pb-1.5 border-b border-slate-100 flex items-center justify-between">
+                <span>Harita &amp; Uydu Katmanı</span>
+                <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-semibold border border-emerald-200">
+                  Google Earth
                 </span>
-                <input
-                  id="map-toggle-smart-layout"
-                  type="checkbox"
-                  checked={labelMode === 'smart'}
-                  onChange={(e) => setLabelMode(e.target.checked ? 'smart' : 'all')}
-                  className="rounded text-sky-600 focus:ring-sky-500 w-4 h-4 cursor-pointer"
-                  title="Uzaklaştığında sade ray noktası, yaklaştığında KM etiketleri gösterir"
-                />
-              </label>
+              </div>
 
-              <label className="flex items-center gap-2 cursor-pointer select-none text-slate-700 py-1">
-                <input
-                  id="map-toggle-railway-overlay"
-                  type="checkbox"
-                  checked={showRailwayOverlay}
-                  onChange={(e) => setShowRailwayOverlay(e.target.checked)}
-                  className="rounded text-sky-600 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
-                />
-                <span className="font-medium">Demiryolu Hatları (OpenRailwayMap)</span>
-              </label>
-
-              {/* Takyidat Overlay Toggle */}
-              <label className="flex items-center gap-2 cursor-pointer select-none text-red-700 py-1 font-bold">
-                <input
-                  id="map-toggle-takyidat-overlay"
-                  type="checkbox"
-                  checked={showTakyidatOverlay}
-                  onChange={(e) => setShowTakyidatOverlay(e.target.checked)}
-                  className="rounded text-red-600 focus:ring-red-500 w-3.5 h-3.5 cursor-pointer"
-                />
-                <span className="flex items-center gap-1.5">
-                  <Gauge className="w-3.5 h-3.5 text-red-600" />
-                  <span>Takyidat &amp; Hız Sınırları ({takyidatRestrictions.length})</span>
-                </span>
-              </label>
-
-              {/* Demiryolu Arazileri / Kadastro Overlay Toggle */}
-              <label className="flex items-center gap-2 cursor-pointer select-none text-indigo-700 py-1 font-bold">
-                <input
-                  id="map-toggle-parcels-overlay"
-                  type="checkbox"
-                  checked={showParcelsOverlay}
-                  onChange={(e) => setShowParcelsOverlay(e.target.checked)}
-                  className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
-                />
-                <span className="flex items-center gap-1.5">
-                  <Landmark className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Demiryolu Arazileri &amp; Parseller ({railwayParcels.length})</span>
-                </span>
-              </label>
-            </div>
-
-            {/* Open in 3D Google Earth Web */}
-            <div className="pt-1.5 border-t border-slate-100">
+              {/* Google Earth Hybrid */}
               <button
-                id="map-open-3d-earth-web-btn"
-                type="button"
-                onClick={handleOpenGoogleEarthWeb}
-                className="w-full flex items-center justify-between px-2.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl font-bold text-[11px] shadow-sm transition-all active:scale-[0.98] cursor-pointer"
-                title="Mevcut harita konumunu resmi 3D Google Earth Web uygulamasında açar"
+                id="map-layer-google-earth-btn"
+                onClick={() => setMapType('google-earth')}
+                className={`text-left px-2.5 py-1.5 rounded-lg transition-colors flex items-center justify-between cursor-pointer ${
+                  mapType === 'google-earth'
+                    ? 'bg-emerald-50 text-emerald-800 font-bold border border-emerald-200'
+                    : 'text-slate-700 hover:bg-slate-50'
+                }`}
               >
-                <div className="flex items-center gap-1.5">
-                  <Globe className="w-3.5 h-3.5" />
-                  <span>3D Google Earth Web'de Gör</span>
+                <div className="flex items-center gap-2">
+                  <Globe className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Google Earth (Hibrit)</span>
                 </div>
-                <ExternalLink className="w-3 h-3 opacity-80" />
+                {mapType === 'google-earth' && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                )}
               </button>
+
+              {/* Google Earth Pure Satellite */}
+              <button
+                id="map-layer-google-satellite-btn"
+                onClick={() => setMapType('google-satellite')}
+                className={`text-left px-2.5 py-1.5 rounded-lg transition-colors flex items-center justify-between cursor-pointer ${
+                  mapType === 'google-satellite'
+                    ? 'bg-emerald-50 text-emerald-800 font-bold border border-emerald-200'
+                    : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Globe className="w-3.5 h-3.5 text-teal-600" />
+                  <span>Google Earth (Saf Uydu)</span>
+                </div>
+                {mapType === 'google-satellite' && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                )}
+              </button>
+
+              {/* Standard OSM Street */}
+              <button
+                id="map-layer-street-btn"
+                onClick={() => setMapType('streets')}
+                className={`text-left px-2.5 py-1.5 rounded-lg transition-colors flex items-center justify-between cursor-pointer ${
+                  mapType === 'streets'
+                    ? 'bg-sky-50 text-sky-800 font-bold border border-sky-200'
+                    : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Train className="w-3.5 h-3.5 text-sky-600" />
+                  <span>Standart Harita (OSM)</span>
+                </div>
+                {mapType === 'streets' && (
+                  <span className="w-2 h-2 rounded-full bg-sky-600"></span>
+                )}
+              </button>
+
+              {/* Esri World Imagery */}
+              <button
+                id="map-layer-esri-satellite-btn"
+                onClick={() => setMapType('esri-satellite')}
+                className={`text-left px-2.5 py-1.5 rounded-lg transition-colors flex items-center justify-between cursor-pointer ${
+                  mapType === 'esri-satellite'
+                    ? 'bg-slate-100 text-slate-900 font-bold border border-slate-300'
+                    : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Globe className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Esri Dünya Uydu</span>
+                </div>
+                {mapType === 'esri-satellite' && (
+                  <span className="w-2 h-2 rounded-full bg-slate-700"></span>
+                )}
+              </button>
+
+              {/* Marker Layout & Overlays Section */}
+              <div className="pt-2 border-t border-slate-100 space-y-1">
+                {/* Smart Railway Layout Toggle */}
+                <label className="flex items-center justify-between cursor-pointer select-none text-sky-900 py-1 font-bold bg-sky-50/80 px-2 rounded-lg border border-sky-200/60 hover:bg-sky-50 transition-colors">
+                  <span className="flex items-center gap-1.5 text-xs">
+                    <Sparkles className="w-3.5 h-3.5 text-sky-600" />
+                    <span>Akıllı Ray Düzeni</span>
+                  </span>
+                  <input
+                    id="map-toggle-smart-layout"
+                    type="checkbox"
+                    checked={labelMode === 'smart'}
+                    onChange={(e) => setLabelMode(e.target.checked ? 'smart' : 'all')}
+                    className="rounded text-sky-600 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
+                    title="Uzaklaştığında sade kalkan rozet, yaklaştığında KM etiketleri gösterir"
+                  />
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer select-none text-slate-700 py-1">
+                  <input
+                    id="map-toggle-railway-overlay"
+                    type="checkbox"
+                    checked={showRailwayOverlay}
+                    onChange={(e) => setShowRailwayOverlay(e.target.checked)}
+                    className="rounded text-sky-600 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
+                  />
+                  <span className="font-medium">Demiryolu Hatları (OpenRailwayMap)</span>
+                </label>
+
+                {/* Takyidat Overlay Toggle */}
+                <label className="flex items-center gap-2 cursor-pointer select-none text-red-700 py-1 font-bold">
+                  <input
+                    id="map-toggle-takyidat-overlay"
+                    type="checkbox"
+                    checked={showTakyidatOverlay}
+                    onChange={(e) => setShowTakyidatOverlay(e.target.checked)}
+                    className="rounded text-red-600 focus:ring-red-500 w-3.5 h-3.5 cursor-pointer"
+                  />
+                  <span className="flex items-center gap-1.5">
+                    <Gauge className="w-3.5 h-3.5 text-red-600" />
+                    <span>Takyidat &amp; Hız Sınırları ({takyidatRestrictions.length})</span>
+                  </span>
+                </label>
+
+                {/* Demiryolu Arazileri / Kadastro Overlay Toggle */}
+                <label className="flex items-center gap-2 cursor-pointer select-none text-indigo-700 py-1 font-bold">
+                  <input
+                    id="map-toggle-parcels-overlay"
+                    type="checkbox"
+                    checked={showParcelsOverlay}
+                    onChange={(e) => setShowParcelsOverlay(e.target.checked)}
+                    className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                  />
+                  <span className="flex items-center gap-1.5">
+                    <Landmark className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Demiryolu Arazileri &amp; Parseller ({railwayParcels.length})</span>
+                  </span>
+                </label>
+              </div>
+
+              {/* Open in 3D Google Earth Web */}
+              <div className="pt-1.5 border-t border-slate-100">
+                <button
+                  id="map-open-3d-earth-web-btn"
+                  type="button"
+                  onClick={handleOpenGoogleEarthWeb}
+                  className="w-full flex items-center justify-between px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] shadow-xs transition-colors cursor-pointer"
+                  title="Mevcut harita konumunu resmi 3D Google Earth Web uygulamasında açar"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>3D Google Earth Web'de Gör</span>
+                  </div>
+                  <ExternalLink className="w-3 h-3 opacity-80" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </div>
-
-      {/* Total Points & Active Takyidat Badges (Top Left) */}
-      <div className="absolute top-4 left-4 z-10 flex items-center gap-2 flex-wrap">
-        <div className="bg-slate-900/90 backdrop-blur-md text-white px-3 py-1.5 rounded-xl shadow-lg border border-slate-700/50 flex items-center gap-2 text-xs font-medium">
-          <Train className="w-3.5 h-3.5 text-sky-400" />
-          <span>
-            {points.length} demiryolu noktası kayıtlı
-          </span>
-          <span className="px-1.5 py-0.5 rounded-md bg-sky-500/20 text-sky-300 text-[10px] font-bold border border-sky-500/30 flex items-center gap-1">
-            <span>{labelMode === 'smart' ? 'Akıllı Ray Düzeni' : 'Tüm Etiketler'}</span>
-          </span>
-        </div>
-
-        {takyidatRestrictions.some((r) => r.status === 'active') && onOpenTakyidat && (
-          <button
-            onClick={onOpenTakyidat}
-            className="bg-red-600/95 hover:bg-red-500 backdrop-blur-md text-white px-3 py-1.5 rounded-xl shadow-lg border border-red-400/60 flex items-center gap-2 text-xs font-bold transition-all active:scale-95 cursor-pointer"
-            title="Aktif Takyidat ve Hız Tahditlerini Listele"
-          >
-            <Gauge className="w-3.5 h-3.5 text-amber-200" />
-            <span>
-              {takyidatRestrictions.filter((r) => r.status === 'active').length} Hız Tahdidi (Takyidat)
-            </span>
-          </button>
-        )}
-
-        {railwayParcels.length > 0 && onOpenParcels && (
-          <button
-            onClick={onOpenParcels}
-            className="bg-indigo-950/90 hover:bg-indigo-900 backdrop-blur-md text-indigo-200 hover:text-white px-3 py-1.5 rounded-xl shadow-lg border border-indigo-500/40 flex items-center gap-2 text-xs font-bold transition-all active:scale-95 cursor-pointer"
-            title="Kayıtlı Demiryolu Taşınmaz ve Kadastro Parsellerini Listele"
-          >
-            <Landmark className="w-3.5 h-3.5 text-indigo-400" />
-            <span>
-              {railwayParcels.length} Kadastro Parseli
-            </span>
-          </button>
-        )}
       </div>
     </div>
   );
