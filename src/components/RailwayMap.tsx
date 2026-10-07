@@ -314,8 +314,16 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 
     return () => {
       if (hoverRafId) cancelAnimationFrame(hoverRafId);
-      map.remove();
+      try {
+        map.remove();
+      } catch {}
       mapInstanceRef.current = null;
+      markersLayerRef.current = null;
+      takyidatLayerRef.current = null;
+      parcelsLayerRef.current = null;
+      measureLayerRef.current = null;
+      railwayLayerRef.current = null;
+      markerInstancesMapRef.current.clear();
     };
   }, []);
 
@@ -560,13 +568,36 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 
   const isCompact = labelMode === 'smart' && currentZoom < 13;
 
+  // Auto-fit bounds on first load when points are loaded
+  const hasAutoFittedRef = useRef<boolean>(false);
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || points.length === 0 || hasAutoFittedRef.current) return;
+
+    try {
+      const validPoints = points.filter(
+        (p) => typeof p.lat === 'number' && typeof p.lng === 'number' && !isNaN(p.lat) && !isNaN(p.lng) && p.lat !== 0 && p.lng !== 0
+      );
+      if (validPoints.length > 0) {
+        const bounds = L.latLngBounds(validPoints.map((p) => [p.lat, p.lng]));
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
+        hasAutoFittedRef.current = true;
+      }
+    } catch {}
+  }, [points]);
+
   // 1. Update & Render Markers on the map (Clean Flat Layer without confusing clusters)
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
     let layer = markersLayerRef.current;
-    if (!layer) {
+    if (!layer || !map.hasLayer(layer)) {
+      if (layer) {
+        try {
+          layer.clearLayers();
+        } catch {}
+      }
       layer = L.layerGroup().addTo(map);
       markersLayerRef.current = layer;
     }
@@ -1053,7 +1084,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
       {isTakyidatPickMode && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-gradient-to-r from-red-700 via-amber-600 to-red-800 text-white px-5 py-3 rounded-2xl font-bold text-xs sm:text-sm shadow-2xl flex items-center gap-3 border-2 border-amber-300 ring-4 ring-red-500/20 animate-in fade-in slide-in-from-top-4 duration-200 max-w-[95vw]">
           <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-            <Gauge className="w-5 h-5 text-white animate-pulse" />
+            <Gauge className="w-5 h-5 text-white" />
           </div>
           <div className="flex flex-col text-left">
             <span className="text-[13px] sm:text-sm font-extrabold text-white leading-tight">
@@ -1295,7 +1326,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
               title="TCDD Takyidat & Hız Kısıtlamalarını Gör / Ekle"
               className={`p-2 sm:p-2.5 rounded-xl transition-all flex items-center justify-center cursor-pointer relative ${
                 takyidatRestrictions.some((r) => r.status === 'active')
-                  ? 'bg-red-600 text-white shadow-sm ring-2 ring-red-400/60 animate-pulse'
+                  ? 'bg-red-600 text-white shadow-sm ring-2 ring-red-400/60'
                   : 'text-slate-700 hover:text-red-600 hover:bg-red-50'
               }`}
             >
