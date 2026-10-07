@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { RailwayPoint, RailwayPointCategory } from '../types.ts';
+import { RailwayPoint, RailwayPointCategory, RailwayParcel } from '../types.ts';
 import {
   parseKML,
   parseGeoJSON,
@@ -11,6 +11,7 @@ import {
   exportToJSON,
   exportToExcel,
 } from '../utils/kmlParser.ts';
+import { parseKmlOrGeoJsonParcels } from '../utils/parcelUtils.ts';
 import { mergeExcelIntoExistingCrossings, ExcelExtractionResult } from '../utils/excelCrossingProcessor.ts';
 import { parseCulvertExcelRows, mergeCulvertsIntoExistingPoints } from '../utils/excelCulvertProcessor.ts';
 import * as XLSX from 'xlsx';
@@ -30,6 +31,7 @@ import {
   Layers,
   Sparkles,
   ChevronDown,
+  Landmark,
 } from 'lucide-react';
 
 interface ImportExportModalProps {
@@ -37,11 +39,14 @@ interface ImportExportModalProps {
   onClose: () => void;
   points: RailwayPoint[];
   onImportSuccess: (importedPoints: Partial<RailwayPoint>[], replaceAll: boolean) => Promise<void>;
+  onImportParcels?: (importedParcels: RailwayParcel[]) => Promise<void>;
   onResetSample: () => Promise<void>;
 }
 
+export type ExtendedImportCategory = RailwayPointCategory | 'parcel' | 'auto';
+
 const CATEGORY_DEFINITIONS: {
-  value: RailwayPointCategory | 'auto';
+  value: ExtendedImportCategory;
   label: string;
   shortLabel: string;
   icon: string;
@@ -55,6 +60,14 @@ const CATEGORY_DEFINITIONS: {
     icon: '🤖',
     badgeClass: 'bg-slate-100 text-slate-700 border-slate-200',
     btnActiveClass: 'bg-slate-800 text-white border-slate-900 shadow-xs',
+  },
+  {
+    value: 'parcel',
+    label: 'Arazi & Kadastro Parseli (TKGM)',
+    shortLabel: 'Kadastro',
+    icon: '🏛️',
+    badgeClass: 'bg-purple-100 text-purple-950 border-purple-300 font-bold',
+    btnActiveClass: 'bg-purple-800 text-white border-purple-900 shadow-xs',
   },
   {
     value: 'culvert',
@@ -112,14 +125,6 @@ const CATEGORY_DEFINITIONS: {
     badgeClass: 'bg-purple-100 text-purple-900 border-purple-200 font-bold',
     btnActiveClass: 'bg-purple-600 text-white border-purple-700 shadow-xs',
   },
-  {
-    value: 'other',
-    label: 'Diğer Noktalar',
-    shortLabel: 'Diğer',
-    icon: '📦',
-    badgeClass: 'bg-slate-100 text-slate-800 border-slate-200 font-bold',
-    btnActiveClass: 'bg-slate-700 text-white border-slate-800 shadow-xs',
-  },
 ];
 
 export const ImportExportModal: React.FC<ImportExportModalProps> = ({
@@ -127,12 +132,14 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
   onClose,
   points,
   onImportSuccess,
+  onImportParcels,
   onResetSample,
 }) => {
   const [activeTab, setActiveTab] = useState<'import' | 'export'>('import');
-  const [targetLine, setTargetLine] = useState<string>('Kayıtlı Demiryolu Hattı');
-  const [importCategory, setImportCategory] = useState<RailwayPointCategory | 'auto'>('auto');
+  const [targetLine, setTargetLine] = useState<string>('Enveriye - Konya Hattı');
+  const [importCategory, setImportCategory] = useState<ExtendedImportCategory>('auto');
   const [parsedPreview, setParsedPreview] = useState<Partial<RailwayPoint>[]>([]);
+  const [parsedParcelsPreview, setParsedParcelsPreview] = useState<Partial<RailwayParcel>[]>([]);
   const [replaceAll, setReplaceAll] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [rawText, setRawText] = useState<string>('');
@@ -165,11 +172,11 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
     return updated;
   };
 
-  const handleCategorySelection = (newCat: RailwayPointCategory | 'auto') => {
+  const handleCategorySelection = (newCat: ExtendedImportCategory) => {
     setImportCategory(newCat);
-    if (parsedPreview.length > 0 && newCat !== 'auto') {
+    if (newCat !== 'parcel' && parsedPreview.length > 0 && newCat !== 'auto') {
       setParsedPreview((prev) =>
-        prev.map((p) => applyCategoryToPoint(p, newCat, targetLine))
+        prev.map((p) => applyCategoryToPoint(p, newCat as RailwayPointCategory, targetLine))
       );
     }
   };
@@ -192,46 +199,70 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
 
   const processFileContent = (content: string, fileName: string) => {
     setStatusMessage(null);
-    let detected: Partial<RailwayPoint>[] = [];
+    setParsedParcelsPreview([]);
+    setParsedPreview([]);
 
     const lowerName = fileName.toLowerCase();
     const trimmed = content.trim();
 
+    // Check if user selected 'parcel' OR if file contains TKGM Cadastre Polygons
+    if (
+      importCategory === 'parcel' ||
+      content.includes('<Polygon>') ||
+      content.includes('<LinearRing>') ||
+      content.includes('tkgm-parsel') ||
+      content.includes('Parsel Sorgu')
+    ) {
+      const parcelsFound = parseKmlOrGeoJsonParcels(content);
+      if (parcelsFound.length > 0) {
+        setParsedParcelsPreview(parcelsFound);
+        setImportCategory('parcel');
+        setStatusMessage({
+          type: 'success',
+          text: `${parcelsFound.length} adet Tapu Kadastro ve Kamulaştırma Parseli tespit edildi.`,
+        });
+        return;
+      }
+    }
+
+    let detected: Partial<RailwayPoint>[] = [];
+    const forcedPointCat: RailwayPointCategory | 'auto' =
+      importCategory === 'parcel' ? 'auto' : importCategory;
+
     if (lowerName.endsWith('.json') || trimmed.startsWith('[') || trimmed.startsWith('{')) {
       detected = parseNativeJSON(content);
       if (detected.length === 0) {
-        detected = parseGeoJSON(content, targetLine, importCategory);
+        detected = parseGeoJSON(content, targetLine, forcedPointCat);
       }
     } else if (lowerName.endsWith('.kml') || content.includes('<kml')) {
-      detected = parseKML(content, targetLine, importCategory);
+      detected = parseKML(content, targetLine, forcedPointCat);
     } else if (lowerName.endsWith('.geojson')) {
-      detected = parseGeoJSON(content, targetLine, importCategory);
+      detected = parseGeoJSON(content, targetLine, forcedPointCat);
     } else if (lowerName.endsWith('.csv')) {
-      detected = parseCSV(content, targetLine, importCategory);
+      detected = parseCSV(content, targetLine, forcedPointCat);
     } else {
       // Auto-detect by content
       if (content.includes('<kml') || content.includes('<Placemark')) {
-        detected = parseKML(content, targetLine, importCategory);
+        detected = parseKML(content, targetLine, forcedPointCat);
       } else if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
         detected = parseNativeJSON(content);
         if (detected.length === 0) {
-          detected = parseGeoJSON(content, targetLine, importCategory);
+          detected = parseGeoJSON(content, targetLine, forcedPointCat);
         }
       } else {
-        detected = parseCSV(content, targetLine, importCategory);
+        detected = parseCSV(content, targetLine, forcedPointCat);
       }
     }
 
     if (detected.length === 0) {
       setStatusMessage({
         type: 'error',
-        text: 'Dosya içeriğinde geçerli koordinat ve KM noktası tespit edilemedi. Lütfen Excel (.xlsx), KML, GeoJSON veya CSV formatında bir dosya yükleyin.',
+        text: 'Dosya içeriğinde geçerli nokta veya kadastro parseli tespit edilemedi. Lütfen geçerli bir KML, Excel veya CBS dosyası yükleyin.',
       });
       setParsedPreview([]);
     } else {
-      // If a specific category was forced, apply it explicitly
-      if (importCategory !== 'auto') {
-        detected = detected.map((p) => applyCategoryToPoint(p, importCategory, targetLine));
+      if (forcedPointCat !== 'auto') {
+        detected = detected.map((p) => applyCategoryToPoint(p, forcedPointCat, targetLine));
       }
       setParsedPreview(detected);
       const catDef = CATEGORY_DEFINITIONS.find((c) => c.value === importCategory);
@@ -257,8 +288,9 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
           setStatusMessage(null);
           setExcelMergeStats(null);
           setMergedFullPoints(null);
+          setParsedParcelsPreview([]);
 
-          // If auto, try smart merge
+          // If auto or crossing, try smart merge
           if (importCategory === 'auto' || importCategory === 'crossing') {
             try {
               const { updatedPoints, stats } = await mergeExcelIntoExistingCrossings(buffer, points);
@@ -318,7 +350,8 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
           }
 
           // Standard Excel parsing
-          const detected = parseExcelBuffer(buffer, targetLine, importCategory);
+          const forcedCat = importCategory === 'parcel' ? 'auto' : importCategory;
+          const detected = parseExcelBuffer(buffer, targetLine, forcedCat);
           if (detected.length === 0) {
             setStatusMessage({
               type: 'error',
@@ -354,6 +387,40 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
   };
 
   const handleApplyImport = async () => {
+    // If we have parcel previews
+    if (parsedParcelsPreview.length > 0 && onImportParcels) {
+      setIsProcessing(true);
+      try {
+        const fullParcels: RailwayParcel[] = parsedParcelsPreview.map((p, idx) => ({
+          id: p.id || `parsel-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+          adaNo: String(p.adaNo || '101'),
+          parselNo: String(p.parselNo || (idx + 1)),
+          lineName: p.lineName || targetLine || 'Enveriye - Konya Hattı',
+          alanM2: typeof p.alanM2 === 'number' ? p.alanM2 : Number(p.alanM2) || 0,
+          il: p.il || 'Eskişehir',
+          ilce: p.ilce || 'Merkez',
+          mahalleKoy: p.mahalleKoy || '',
+          malik: p.malik || 'TCDD İşletmesi Genel Müdürlüğü',
+          nitelik: p.nitelik || 'Demiryolu Güzergahı',
+          ownershipStatus: p.ownershipStatus || 'tcdd',
+          coordinates: Array.isArray(p.coordinates) ? p.coordinates : [],
+          notes: p.notes || 'TKGM KML İçe Aktarımı',
+          createdAt: p.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }));
+        await onImportParcels(fullParcels);
+        onClose();
+      } catch (err: any) {
+        setStatusMessage({
+          type: 'error',
+          text: 'Kadastro parselleri aktarılırken hata oluştu: ' + (err.message || 'Hata'),
+        });
+      } finally {
+        setIsProcessing(false);
+      }
+      return;
+    }
+
     if (parsedPreview.length === 0) return;
     setIsProcessing(true);
     try {
@@ -395,7 +462,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
           <button
             id="close-import-export-btn"
             onClick={onClose}
-            className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+            className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -406,19 +473,19 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
           <button
             id="tab-import-btn"
             onClick={() => setActiveTab('import')}
-            className={`flex-1 py-3 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-3 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
               activeTab === 'import'
                 ? 'border-b-2 border-sky-600 text-sky-700 bg-sky-50/50'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <Upload className="w-3.5 h-3.5" />
-            <span>KML / Excel / GeoJSON İçe Aktar</span>
+            <span>KML / Excel / Kadastro İçe Aktar</span>
           </button>
           <button
             id="tab-export-btn"
             onClick={() => setActiveTab('export')}
-            className={`flex-1 py-3 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-3 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
               activeTab === 'export'
                 ? 'border-b-2 border-sky-600 text-sky-700 bg-sky-50/50'
                 : 'text-slate-600 hover:text-slate-900'
@@ -438,16 +505,16 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                     <Layers className="w-4 h-4 text-sky-600" />
-                    <span>İçe Aktarılacak Nokta Kategorisi:</span>
+                    <span>İçe Aktarılacak Kategori:</span>
                   </label>
                   <span className="text-[11px] text-slate-500">
-                    Menfez, Makas veya Köprü seçebilirsiniz
+                    Menfez, Kadastro veya Makas seçebilirsiniz
                   </span>
                 </div>
 
                 {/* Category Quick Chips */}
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
-                  {CATEGORY_DEFINITIONS.slice(0, 8).map((cat) => {
+                <div className="grid grid-cols-3 sm:grid-cols-3 gap-1.5">
+                  {CATEGORY_DEFINITIONS.map((cat) => {
                     const isSelected = importCategory === cat.value;
                     return (
                       <button
@@ -478,7 +545,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                       type="text"
                       value={targetLine}
                       onChange={(e) => setTargetLine(e.target.value)}
-                      placeholder="Örn: Eskişehir - Konya Hattı"
+                      placeholder="Örn: Enveriye - Konya Hattı"
                       className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-sky-500 focus:outline-none"
                     />
                   </div>
@@ -501,7 +568,9 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                 <div className="flex items-center justify-center gap-2 mb-1.5">
                   <Upload className="w-6 h-6 text-sky-600" />
                   <span className="text-xl">
-                    {importCategory === 'culvert'
+                    {importCategory === 'parcel'
+                      ? '🏛️'
+                      : importCategory === 'culvert'
                       ? '🕳️'
                       : importCategory === 'switch'
                       ? '🔀'
@@ -516,8 +585,10 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                   KML, Excel (.xlsx), GeoJSON veya CSV dosyasını seçin ya da sürükleyin
                 </p>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  {importCategory === 'auto'
-                    ? 'Nokta türleri dosyadaki isimlerden (Makas, Menfez vb.) otomatik tespit edilir'
+                  {importCategory === 'parcel'
+                    ? 'TKGM Parsel Sorgu KML / GeoJSON dosyaları otomatik olarak tapu parsellerine aktarılır'
+                    : importCategory === 'auto'
+                    ? 'Nokta türleri dosyadaki isimlerden (Makas, Menfez, Parsel vb.) otomatik tespit edilir'
                     : `Yüklenen tüm noktalar "${CATEGORY_DEFINITIONS.find((c) => c.value === importCategory)?.label}" olarak aktarılacaktır.`}
                 </p>
               </div>
@@ -565,8 +636,65 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                 </div>
               )}
 
-              {/* Preview & Import button */}
-              {parsedPreview.length > 0 && (
+              {/* Parcels Preview Section */}
+              {parsedParcelsPreview.length > 0 && (
+                <div className="space-y-3 pt-2 border-t border-slate-200">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-purple-900 flex items-center gap-1.5">
+                      <Landmark className="w-4 h-4 text-purple-600" />
+                      <span>Aktarılacak Kadastro Parselleri ({parsedParcelsPreview.length})</span>
+                    </span>
+                    <span className="text-[11px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
+                      {targetLine}
+                    </span>
+                  </div>
+
+                  <div className="max-h-56 overflow-y-auto space-y-1.5 border border-purple-200 rounded-xl p-2 bg-purple-50/40 text-xs">
+                    {parsedParcelsPreview.slice(0, 50).map((p, idx) => (
+                      <div
+                        key={idx}
+                        className="flex justify-between items-center bg-white p-2 rounded-lg border border-purple-100 shadow-2xs"
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <span className="text-[10px] bg-purple-600 text-white font-black px-1.5 py-0.5 rounded font-mono">
+                            {p.adaNo}-{p.parselNo}
+                          </span>
+                          <span className="font-semibold text-slate-800 truncate">
+                            {p.mahalleKoy || p.ilce || 'Kadastro Sahası'} ({p.il})
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {p.alanM2 ? (
+                            <span className="font-mono text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                              {Number(p.alanM2).toLocaleString('tr-TR')} m²
+                            </span>
+                          ) : null}
+                          <span className="text-[9px] text-slate-500 font-mono">
+                            {p.coordinates?.length || 0} köşe
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleApplyImport}
+                    disabled={isProcessing}
+                    className="w-full bg-purple-700 hover:bg-purple-800 text-white font-bold py-2.5 rounded-xl text-xs shadow-md transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Landmark className="w-4 h-4" />
+                    <span>
+                      {isProcessing
+                        ? 'Parseller Aktarılıyor...'
+                        : `${parsedParcelsPreview.length} Kadastro Parselini Sisteme Kaydet`}
+                    </span>
+                  </button>
+                </div>
+              )}
+
+              {/* Point Preview & Import button */}
+              {parsedPreview.length > 0 && parsedParcelsPreview.length === 0 && (
                 <div className="space-y-3 pt-2 border-t border-slate-200">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-2">
@@ -621,7 +749,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                   <div className="max-h-56 overflow-y-auto space-y-1.5 border border-slate-200 rounded-xl p-2 bg-slate-50 text-xs">
                     {parsedPreview.slice(0, 50).map((p, idx) => {
                       const cat = p.category || 'km_marker';
-                      const catDef = CATEGORY_DEFINITIONS.find((c) => c.value === cat) || CATEGORY_DEFINITIONS[1];
+                      const catDef = CATEGORY_DEFINITIONS.find((c) => c.value === cat) || CATEGORY_DEFINITIONS[2];
 
                       return (
                         <div

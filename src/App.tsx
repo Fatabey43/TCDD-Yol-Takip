@@ -1456,6 +1456,7 @@ export default function App() {
         onClose={() => setIsImportExportOpen(false)}
         points={points}
         onImportSuccess={handleImportSuccess}
+        onImportParcels={handleBatchImportParcels}
         onResetSample={handleResetSample}
       />
 
