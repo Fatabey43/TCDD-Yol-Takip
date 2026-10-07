@@ -1349,8 +1349,19 @@ export async function fetchParcelsList(): Promise<RailwayParcel[]> {
     if (res.ok) {
       const list = await res.json();
       if (Array.isArray(list)) {
-        saveLocalCachedParcels(list);
-        return list;
+        if (list.length > 0) {
+          saveLocalCachedParcels(list);
+          return list;
+        } else {
+          const local = getLocalCachedParcels();
+          if (local.length > 0) {
+            // Server was empty, restore server data from local cache
+            saveParcelsBatch(local).catch(() => {});
+            return local;
+          }
+          saveLocalCachedParcels([]);
+          return [];
+        }
       }
     }
   } catch (err) {
@@ -1441,7 +1452,17 @@ export async function deleteParcelById(id: string): Promise<boolean> {
 }
 
 export async function saveParcelsBatch(list: RailwayParcel[]): Promise<{ success: boolean; count: number }> {
-  saveLocalCachedParcels(list);
+  const local = getLocalCachedParcels();
+  const map = new Map<string, RailwayParcel>();
+  local.forEach((p) => {
+    if (p && p.id) map.set(p.id, p);
+  });
+  list.forEach((p) => {
+    if (p && p.id) map.set(p.id, p);
+  });
+  const combined = Array.from(map.values());
+  saveLocalCachedParcels(combined);
+
   try {
     const res = await fetch('/api/parcels', {
       method: 'POST',
@@ -1454,6 +1475,6 @@ export async function saveParcelsBatch(list: RailwayParcel[]): Promise<{ success
   } catch (err) {
     console.warn('Toplu parsel aktarımı çevrimdışı tamamlandı:', err);
   }
-  return { success: true, count: list.length };
+  return { success: true, count: combined.length };
 }
 

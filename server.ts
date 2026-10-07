@@ -145,9 +145,15 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-// Ensure data file exists with empty array
+// Ensure data files exist
 if (!fs.existsSync(DATA_FILE)) {
   fs.writeFileSync(DATA_FILE, '[]', 'utf-8');
+}
+if (!fs.existsSync(PARCELS_FILE)) {
+  fs.writeFileSync(PARCELS_FILE, '[]', 'utf-8');
+}
+if (!fs.existsSync(TAKYIDAT_FILE)) {
+  fs.writeFileSync(TAKYIDAT_FILE, '[]', 'utf-8');
 }
 
 // Check if an ID belongs to a default demo point that must never reappear
@@ -1627,7 +1633,38 @@ function getParcels(): any[] {
     if (fs.existsSync(PARCELS_FILE)) {
       const raw = fs.readFileSync(PARCELS_FILE, 'utf-8');
       const list = JSON.parse(raw);
-      if (Array.isArray(list)) return list;
+      if (Array.isArray(list)) {
+        let hasFixed = false;
+        const normalized = list
+          .map((p, idx) => {
+            if (!p || typeof p !== 'object') return null;
+            const id = p.id || `parsel-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`;
+            if (!p.id) hasFixed = true;
+            return {
+              ...p,
+              id,
+              adaNo: String(p.adaNo || ''),
+              parselNo: String(p.parselNo || ''),
+              lineName: p.lineName || 'Enveriye - Konya Hattı',
+              alanM2: typeof p.alanM2 === 'number' ? p.alanM2 : Number(p.alanM2) || 0,
+              coordinates: Array.isArray(p.coordinates) ? p.coordinates : [],
+              il: p.il || 'Eskişehir',
+              ilce: p.ilce || 'Merkez',
+              mahalleKoy: p.mahalleKoy || '',
+              malik: p.malik || 'TCDD İşletmesi Genel Müdürlüğü',
+              nitelik: p.nitelik || 'Demiryolu Güzergahı',
+              ownershipStatus: p.ownershipStatus || 'tcdd',
+              createdAt: p.createdAt || new Date().toISOString(),
+              updatedAt: p.updatedAt || new Date().toISOString(),
+            };
+          })
+          .filter(Boolean);
+
+        if (hasFixed) {
+          saveParcels(normalized);
+        }
+        return normalized;
+      }
     }
   } catch (err) {
     console.error('Error reading parcels file:', err);
@@ -1656,34 +1693,75 @@ app.post('/api/parcels', (req, res) => {
   const list = getParcels();
 
   if (Array.isArray(body)) {
-    saveParcels(body);
+    const map = new Map();
+    list.forEach((p: any) => {
+      if (p && p.id) map.set(p.id, p);
+    });
+    body.forEach((p: any, idx: number) => {
+      if (p && typeof p === 'object') {
+        const id = p.id || `parsel-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`;
+        const cleanItem = {
+          ...p,
+          id,
+          adaNo: String(p.adaNo || ''),
+          parselNo: String(p.parselNo || ''),
+          lineName: p.lineName || 'Enveriye - Konya Hattı',
+          alanM2: typeof p.alanM2 === 'number' ? p.alanM2 : Number(p.alanM2) || 0,
+          coordinates: Array.isArray(p.coordinates) ? p.coordinates : [],
+          il: p.il || 'Eskişehir',
+          ilce: p.ilce || 'Merkez',
+          mahalleKoy: p.mahalleKoy || '',
+          malik: p.malik || 'TCDD İşletmesi Genel Müdürlüğü',
+          nitelik: p.nitelik || 'Demiryolu Güzergahı',
+          ownershipStatus: p.ownershipStatus || 'tcdd',
+          createdAt: p.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        map.set(id, cleanItem);
+      }
+    });
+    const combined = Array.from(map.values());
+    saveParcels(combined);
     notifyPointsChanged('parcels_changed');
-    return res.json({ success: true, count: body.length });
+    return res.json({ success: true, count: combined.length });
   }
 
+  const id = body.id || `parsel-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const newParcel = {
-    id: body.id || `parsel-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-    il: body.il || 'Eskişehir',
-    ilce: body.ilce || 'Sivrihisar',
-    mahalleKoy: body.mahalleKoy || 'Dümrek',
-    adaNo: String(body.adaNo || '101'),
-    parselNo: String(body.parselNo || '1'),
-    nitelik: body.nitelik || 'Demiryolu Güzergahı ve Müştemilatı',
-    alanM2: Number(body.alanM2) || 25000,
+    ...body,
+    id,
+    il: body.il || '',
+    ilce: body.ilce || '',
+    mahalleKoy: body.mahalleKoy || '',
+    adaNo: String(body.adaNo || ''),
+    parselNo: String(body.parselNo || ''),
+    nitelik: body.nitelik || 'Demiryolu Güzergahı',
+    alanM2: Number(body.alanM2) || 0,
     paftaNo: body.paftaNo || '',
     malik: body.malik || 'TCDD İşletmesi Genel Müdürlüğü',
+    ownershipStatus: body.ownershipStatus || 'tcdd',
     startKm: body.startKm || '',
     endKm: body.endKm || '',
-    lineName: body.lineName || 'Eskişehir-Konya',
+    lineName: body.lineName || '',
     kamulastirmaGenisligiMetre: Number(body.kamulastirmaGenisligiMetre) || 30,
     coordinates: body.coordinates || [],
+    encroachmentStatus: body.encroachmentStatus || 'none',
+    encroachmentNote: body.encroachmentNote || '',
+    contactPerson: body.contactPerson || '',
+    protocolNo: body.protocolNo || '',
     notes: body.notes || '',
     tkgmUrl: body.tkgmUrl || '',
-    createdAt: new Date().toISOString(),
+    createdAt: body.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
 
-  list.push(newParcel);
+  const existingIdx = list.findIndex((p: any) => p.id === id);
+  if (existingIdx >= 0) {
+    list[existingIdx] = newParcel;
+  } else {
+    list.unshift(newParcel);
+  }
+
   saveParcels(list);
   notifyPointsChanged('parcels_changed');
   res.status(201).json(newParcel);

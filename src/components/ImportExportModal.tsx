@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { RailwayPoint } from '../types.ts';
+import { RailwayPoint, RailwayPointCategory } from '../types.ts';
 import {
   parseKML,
   parseGeoJSON,
@@ -15,7 +15,22 @@ import { mergeExcelIntoExistingCrossings, ExcelExtractionResult } from '../utils
 import { parseCulvertExcelRows, mergeCulvertsIntoExistingPoints } from '../utils/excelCulvertProcessor.ts';
 import * as XLSX from 'xlsx';
 import { DeleteConfirmModal } from './DeleteConfirmModal.tsx';
-import { X, Upload, Download, FileText, CheckCircle2, AlertCircle, RefreshCw, Copy, Check, Table, Image as ImageIcon } from 'lucide-react';
+import {
+  X,
+  Upload,
+  Download,
+  FileText,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  Copy,
+  Check,
+  Table,
+  Image as ImageIcon,
+  Layers,
+  Sparkles,
+  ChevronDown,
+} from 'lucide-react';
 
 interface ImportExportModalProps {
   isOpen: boolean;
@@ -24,6 +39,88 @@ interface ImportExportModalProps {
   onImportSuccess: (importedPoints: Partial<RailwayPoint>[], replaceAll: boolean) => Promise<void>;
   onResetSample: () => Promise<void>;
 }
+
+const CATEGORY_DEFINITIONS: {
+  value: RailwayPointCategory | 'auto';
+  label: string;
+  shortLabel: string;
+  icon: string;
+  badgeClass: string;
+  btnActiveClass: string;
+}[] = [
+  {
+    value: 'auto',
+    label: 'Otomatik Tanı (İsim / İçerikten)',
+    shortLabel: 'Otomatik',
+    icon: '🤖',
+    badgeClass: 'bg-slate-100 text-slate-700 border-slate-200',
+    btnActiveClass: 'bg-slate-800 text-white border-slate-900 shadow-xs',
+  },
+  {
+    value: 'culvert',
+    label: 'Menfez (Culvert)',
+    shortLabel: 'Menfez',
+    icon: '🕳️',
+    badgeClass: 'bg-teal-100 text-teal-900 border-teal-200 font-bold',
+    btnActiveClass: 'bg-teal-700 text-white border-teal-800 shadow-xs',
+  },
+  {
+    value: 'switch',
+    label: 'Makas (Demiryolu Makası)',
+    shortLabel: 'Makas',
+    icon: '🔀',
+    badgeClass: 'bg-rose-100 text-rose-900 border-rose-200 font-bold',
+    btnActiveClass: 'bg-rose-600 text-white border-rose-700 shadow-xs',
+  },
+  {
+    value: 'bridge',
+    label: 'Köprü / Viyadük',
+    shortLabel: 'Köprü',
+    icon: '🌉',
+    badgeClass: 'bg-indigo-100 text-indigo-900 border-indigo-200 font-bold',
+    btnActiveClass: 'bg-indigo-600 text-white border-indigo-700 shadow-xs',
+  },
+  {
+    value: 'crossing',
+    label: 'Hemzemin Geçit',
+    shortLabel: 'Geçit',
+    icon: '🚧',
+    badgeClass: 'bg-amber-100 text-amber-900 border-amber-200 font-bold',
+    btnActiveClass: 'bg-amber-600 text-white border-amber-700 shadow-xs',
+  },
+  {
+    value: 'station',
+    label: 'İstasyon / Gar',
+    shortLabel: 'İstasyon',
+    icon: '🚉',
+    badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-200 font-bold',
+    btnActiveClass: 'bg-emerald-600 text-white border-emerald-700 shadow-xs',
+  },
+  {
+    value: 'km_marker',
+    label: 'KM Taşı / Metraj',
+    shortLabel: 'KM Taşı',
+    icon: '📍',
+    badgeClass: 'bg-blue-100 text-blue-900 border-blue-200 font-bold',
+    btnActiveClass: 'bg-blue-600 text-white border-blue-700 shadow-xs',
+  },
+  {
+    value: 'signal',
+    label: 'Sinyal / Trafo',
+    shortLabel: 'Sinyal',
+    icon: '🚦',
+    badgeClass: 'bg-purple-100 text-purple-900 border-purple-200 font-bold',
+    btnActiveClass: 'bg-purple-600 text-white border-purple-700 shadow-xs',
+  },
+  {
+    value: 'other',
+    label: 'Diğer Noktalar',
+    shortLabel: 'Diğer',
+    icon: '📦',
+    badgeClass: 'bg-slate-100 text-slate-800 border-slate-200 font-bold',
+    btnActiveClass: 'bg-slate-700 text-white border-slate-800 shadow-xs',
+  },
+];
 
 export const ImportExportModal: React.FC<ImportExportModalProps> = ({
   isOpen,
@@ -34,6 +131,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'import' | 'export'>('import');
   const [targetLine, setTargetLine] = useState<string>('Kayıtlı Demiryolu Hattı');
+  const [importCategory, setImportCategory] = useState<RailwayPointCategory | 'auto'>('auto');
   const [parsedPreview, setParsedPreview] = useState<Partial<RailwayPoint>[]>([]);
   const [replaceAll, setReplaceAll] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -49,6 +147,49 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
 
   if (!isOpen) return null;
 
+  const applyCategoryToPoint = (
+    p: Partial<RailwayPoint>,
+    newCat: RailwayPointCategory,
+    lineName: string
+  ): Partial<RailwayPoint> => {
+    const updated: Partial<RailwayPoint> = {
+      ...p,
+      category: newCat,
+    };
+    if (newCat === 'culvert') {
+      updated.culvert = p.culvert || {
+        hatti: p.lineName || lineName,
+        mihverKlm: p.kmValue || p.title || '',
+      };
+    }
+    return updated;
+  };
+
+  const handleCategorySelection = (newCat: RailwayPointCategory | 'auto') => {
+    setImportCategory(newCat);
+    if (parsedPreview.length > 0 && newCat !== 'auto') {
+      setParsedPreview((prev) =>
+        prev.map((p) => applyCategoryToPoint(p, newCat, targetLine))
+      );
+    }
+  };
+
+  const handleRowCategoryChange = (index: number, newCat: RailwayPointCategory) => {
+    setParsedPreview((prev) => {
+      const copy = [...prev];
+      if (copy[index]) {
+        copy[index] = applyCategoryToPoint(copy[index], newCat, targetLine);
+      }
+      return copy;
+    });
+  };
+
+  const handleBulkChangeAllPreview = (newCat: RailwayPointCategory) => {
+    setParsedPreview((prev) =>
+      prev.map((p) => applyCategoryToPoint(p, newCat, targetLine))
+    );
+  };
+
   const processFileContent = (content: string, fileName: string) => {
     setStatusMessage(null);
     let detected: Partial<RailwayPoint>[] = [];
@@ -59,25 +200,25 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
     if (lowerName.endsWith('.json') || trimmed.startsWith('[') || trimmed.startsWith('{')) {
       detected = parseNativeJSON(content);
       if (detected.length === 0) {
-        detected = parseGeoJSON(content, targetLine);
+        detected = parseGeoJSON(content, targetLine, importCategory);
       }
     } else if (lowerName.endsWith('.kml') || content.includes('<kml')) {
-      detected = parseKML(content, targetLine);
+      detected = parseKML(content, targetLine, importCategory);
     } else if (lowerName.endsWith('.geojson')) {
-      detected = parseGeoJSON(content, targetLine);
+      detected = parseGeoJSON(content, targetLine, importCategory);
     } else if (lowerName.endsWith('.csv')) {
-      detected = parseCSV(content, targetLine);
+      detected = parseCSV(content, targetLine, importCategory);
     } else {
       // Auto-detect by content
       if (content.includes('<kml') || content.includes('<Placemark')) {
-        detected = parseKML(content, targetLine);
+        detected = parseKML(content, targetLine, importCategory);
       } else if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
         detected = parseNativeJSON(content);
         if (detected.length === 0) {
-          detected = parseGeoJSON(content, targetLine);
+          detected = parseGeoJSON(content, targetLine, importCategory);
         }
       } else {
-        detected = parseCSV(content, targetLine);
+        detected = parseCSV(content, targetLine, importCategory);
       }
     }
 
@@ -88,10 +229,15 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
       });
       setParsedPreview([]);
     } else {
+      // If a specific category was forced, apply it explicitly
+      if (importCategory !== 'auto') {
+        detected = detected.map((p) => applyCategoryToPoint(p, importCategory, targetLine));
+      }
       setParsedPreview(detected);
+      const catDef = CATEGORY_DEFINITIONS.find((c) => c.value === importCategory);
       setStatusMessage({
         type: 'success',
-        text: `${detected.length} adet demiryolu noktası başarıyla ayrıştırıldı.`,
+        text: `${detected.length} adet nokta başarıyla okundu ${importCategory !== 'auto' ? `(${catDef?.label} olarak işaretlendi)` : ''}.`,
       });
     }
   };
@@ -112,63 +258,67 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
           setExcelMergeStats(null);
           setMergedFullPoints(null);
 
-          try {
-            // Smart Merge into existing crossings with photo extraction
-            const { updatedPoints, stats } = await mergeExcelIntoExistingCrossings(buffer, points);
-            if (stats.matchedCrossingsCount > 0) {
-              setMergedFullPoints(updatedPoints);
-              setExcelMergeStats(stats);
-              setParsedPreview(
-                updatedPoints.filter((p) =>
-                  stats.details.some((d) => d.pointId === p.id)
-                )
-              );
-              setStatusMessage({
-                type: 'success',
-                text: `Mevcut 92 nokta içindeki ${stats.matchedCrossingsCount} adet hemzemin geçit KM numarasına göre eşleşti! ${stats.extractedPhotosCount > 0 ? `(${stats.extractedPhotosCount} adet fotoğraf Excel'den çıkarıldı)` : ''} Dışarıdan fazladan nokta eklenmeyecek, sadece mevcut geçitler güncellenecek.`,
-              });
-              return;
-            }
-          } catch (excelErr) {
-            console.warn('Excel akıllı birleştirme denemesi:', excelErr);
-          }
-
-          // Check if this is a Culvert (Menfez) Excel sheet (e.g. "712 YOL BAKIM ŞEFLİĞİ MENFEZ LİSTESİ")
-          try {
-            const wb = XLSX.read(buffer, { type: 'array' });
-            let allCulvertRecords: any[] = [];
-            for (const sName of wb.SheetNames) {
-              const ws = wb.Sheets[sName];
-              if (ws) {
-                const sheetCulverts = parseCulvertExcelRows(ws);
-                if (sheetCulverts.length > 0) {
-                  allCulvertRecords = allCulvertRecords.concat(sheetCulverts);
-                }
-              }
-            }
-
-            if (allCulvertRecords.length > 0) {
-              const { updatedPoints, stats } = mergeCulvertsIntoExistingPoints(allCulvertRecords, points);
-              if (stats.matchedCulvertsCount > 0) {
+          // If auto, try smart merge
+          if (importCategory === 'auto' || importCategory === 'crossing') {
+            try {
+              const { updatedPoints, stats } = await mergeExcelIntoExistingCrossings(buffer, points);
+              if (stats.matchedCrossingsCount > 0) {
                 setMergedFullPoints(updatedPoints);
+                setExcelMergeStats(stats);
                 setParsedPreview(
                   updatedPoints.filter((p) =>
-                    stats.details.some((d) => d.matched && (d.km === p.kmValue || d.km === p.culvert?.mihverKlm))
+                    stats.details.some((d) => d.pointId === p.id)
                   )
                 );
                 setStatusMessage({
                   type: 'success',
-                  text: `Menfez listesindeki ${stats.matchedCulvertsCount} adet menfez haritadaki noktalarla KM bazında başarıyla eşleşti! Açıklık, debuşe yüksekliği ve cinsi güncellenecek.`,
+                  text: `Mevcut noktalar içindeki ${stats.matchedCrossingsCount} adet hemzemin geçit KM numarasına göre eşleşti! ${stats.extractedPhotosCount > 0 ? `(${stats.extractedPhotosCount} adet fotoğraf Excel'den çıkarıldı)` : ''}`,
                 });
                 return;
               }
+            } catch (excelErr) {
+              console.warn('Excel akıllı birleştirme denemesi:', excelErr);
             }
-          } catch (culvertErr) {
-            console.warn('Menfez Excel ayrıştırma denemesi:', culvertErr);
           }
 
-          // Fallback to standard parse if no existing crossings or culverts matched
-          const detected = parseExcelBuffer(buffer, targetLine);
+          // Check if this is a Culvert (Menfez) Excel sheet
+          if (importCategory === 'auto' || importCategory === 'culvert') {
+            try {
+              const wb = XLSX.read(buffer, { type: 'array' });
+              let allCulvertRecords: any[] = [];
+              for (const sName of wb.SheetNames) {
+                const ws = wb.Sheets[sName];
+                if (ws) {
+                  const sheetCulverts = parseCulvertExcelRows(ws);
+                  if (sheetCulverts.length > 0) {
+                    allCulvertRecords = allCulvertRecords.concat(sheetCulverts);
+                  }
+                }
+              }
+
+              if (allCulvertRecords.length > 0) {
+                const { updatedPoints, stats } = mergeCulvertsIntoExistingPoints(allCulvertRecords, points);
+                if (stats.matchedCulvertsCount > 0) {
+                  setMergedFullPoints(updatedPoints);
+                  setParsedPreview(
+                    updatedPoints.filter((p) =>
+                      stats.details.some((d) => d.matched && (d.km === p.kmValue || d.km === p.culvert?.mihverKlm))
+                    )
+                  );
+                  setStatusMessage({
+                    type: 'success',
+                    text: `Menfez listesindeki ${stats.matchedCulvertsCount} adet menfez KM bazında başarıyla eşleşti!`,
+                  });
+                  return;
+                }
+              }
+            } catch (culvertErr) {
+              console.warn('Menfez Excel ayrıştırma denemesi:', culvertErr);
+            }
+          }
+
+          // Standard Excel parsing
+          const detected = parseExcelBuffer(buffer, targetLine, importCategory);
           if (detected.length === 0) {
             setStatusMessage({
               type: 'error',
@@ -179,7 +329,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
             setParsedPreview(detected);
             setStatusMessage({
               type: 'success',
-              text: `Excel tablosundan ${detected.length} adet satır okundu.`,
+              text: `Excel tablosundan ${detected.length} adet nokta okundu.`,
             });
           }
         }
@@ -208,7 +358,6 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
     setIsProcessing(true);
     try {
       if (mergedFullPoints && excelMergeStats && excelMergeStats.matchedCrossingsCount > 0) {
-        // Only update matched points, do NOT delete or replace the entire database
         const updatedOnly = mergedFullPoints.filter((p) =>
           excelMergeStats.details.some((d) => d.pointId === p.id)
         );
@@ -234,14 +383,14 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden my-6"
+        className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden my-6"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white">
           <div className="flex items-center gap-2">
             <Upload className="w-5 h-5 text-sky-400" />
-            <h3 className="font-bold text-base">Google Haritalar &amp; KM Veri Yönetimi</h3>
+            <h3 className="font-bold text-base">KML / Excel / CBS Veri Yönetimi</h3>
           </div>
           <button
             id="close-import-export-btn"
@@ -264,7 +413,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
             }`}
           >
             <Upload className="w-3.5 h-3.5" />
-            <span>Excel / KML / CSV İçe Aktar</span>
+            <span>KML / Excel / GeoJSON İçe Aktar</span>
           </button>
           <button
             id="tab-export-btn"
@@ -281,65 +430,107 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
         </div>
 
         {/* Body */}
-        <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+        <div className="p-6 space-y-4 max-h-[78vh] overflow-y-auto">
           {activeTab === 'import' ? (
             <div className="space-y-4">
-              <div className="bg-emerald-50/80 p-3 rounded-xl border border-emerald-200/90 text-xs text-emerald-950 leading-relaxed space-y-1">
-                <div className="font-bold flex items-center gap-1 text-emerald-900">
-                  <Table className="w-4 h-4 text-emerald-700" />
-                  <span>Excel (.xlsx, .xls) ve Harita Dosyalarınızı Kolayca Yükleyin:</span>
+              {/* Category Selector Banner & Quick Buttons */}
+              <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Layers className="w-4 h-4 text-sky-600" />
+                    <span>İçe Aktarılacak Nokta Kategorisi:</span>
+                  </label>
+                  <span className="text-[11px] text-slate-500">
+                    Menfez, Makas veya Köprü seçebilirsiniz
+                  </span>
                 </div>
-                <p>
-                  Elinizdeki Excel tablosunu doğrudan buraya sürükleyip bırakabilirsiniz. Sistem sütun başlıklarını (KM, Başlık/İsim, Enlem/Boylam, Geçit Tipi, Kaplama Cinsi, Taşıt/Tren Sayısı, Açıklık vb.) otomatik tanır ve mevcut noktalarınızla birleştirir.
-                </p>
-              </div>
 
-              {/* Line designation */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Varsayılan Hat Adı
-                </label>
-                <input
-                  id="import-target-line-input"
-                  type="text"
-                  value={targetLine}
-                  onChange={(e) => setTargetLine(e.target.value)}
-                  placeholder="Örn: Ankara - İstanbul Hızlı Tren Hattı"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none"
-                />
+                {/* Category Quick Chips */}
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                  {CATEGORY_DEFINITIONS.slice(0, 8).map((cat) => {
+                    const isSelected = importCategory === cat.value;
+                    return (
+                      <button
+                        key={cat.value}
+                        type="button"
+                        onClick={() => handleCategorySelection(cat.value)}
+                        className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-xl text-[11px] font-semibold transition-all border cursor-pointer ${
+                          isSelected
+                            ? cat.btnActiveClass
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-sky-300 hover:bg-sky-50/50'
+                        }`}
+                      >
+                        <span>{cat.icon}</span>
+                        <span className="truncate">{cat.shortLabel}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Target Line name */}
+                <div className="pt-2 border-t border-slate-200/70">
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] font-bold text-slate-700 whitespace-nowrap">
+                      Hat / Mıntıka:
+                    </label>
+                    <input
+                      id="import-target-line-input"
+                      type="text"
+                      value={targetLine}
+                      onChange={(e) => setTargetLine(e.target.value)}
+                      placeholder="Örn: Eskişehir - Konya Hattı"
+                      className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* File Dropzone */}
               <div
-                className="border-2 border-dashed border-slate-300 hover:border-sky-500 rounded-2xl p-6 text-center cursor-pointer transition-colors bg-slate-50 hover:bg-sky-50/30"
+                className="border-2 border-dashed border-slate-300 hover:border-sky-500 rounded-2xl p-5 text-center cursor-pointer transition-colors bg-white hover:bg-sky-50/30"
                 onClick={() => fileInputRef.current?.click()}
               >
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".xlsx,.xls,.kml,.geojson,.json,.csv,.txt"
+                  accept=".kml,.geojson,.json,.csv,.xlsx,.xls,.txt"
                   onChange={handleFileUpload}
                   className="hidden"
                   id="file-import-input"
                 />
-                <Table className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
-                <p className="text-xs font-semibold text-slate-800">
-                  Excel (.xlsx, .xls), KML, GeoJSON veya CSV dosyasını seçin ya da sürükleyin
+                <div className="flex items-center justify-center gap-2 mb-1.5">
+                  <Upload className="w-6 h-6 text-sky-600" />
+                  <span className="text-xl">
+                    {importCategory === 'culvert'
+                      ? '🕳️'
+                      : importCategory === 'switch'
+                      ? '🔀'
+                      : importCategory === 'bridge'
+                      ? '🌉'
+                      : importCategory === 'crossing'
+                      ? '🚧'
+                      : '🗺️'}
+                  </span>
+                </div>
+                <p className="text-xs font-bold text-slate-800">
+                  KML, Excel (.xlsx), GeoJSON veya CSV dosyasını seçin ya da sürükleyin
                 </p>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Excel geçit tabloları, Google Haritalar KML ve CBS dosyaları tam uyumludur
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  {importCategory === 'auto'
+                    ? 'Nokta türleri dosyadaki isimlerden (Makas, Menfez vb.) otomatik tespit edilir'
+                    : `Yüklenen tüm noktalar "${CATEGORY_DEFINITIONS.find((c) => c.value === importCategory)?.label}" olarak aktarılacaktır.`}
                 </p>
               </div>
 
-              {/* Or paste text */}
+              {/* Paste Raw Text Details */}
               <details className="text-xs text-slate-600">
                 <summary className="cursor-pointer font-semibold hover:text-slate-900 py-1">
-                  veya KML / GeoJSON / CSV kodunu buraya yapıştırın
+                  veya KML / GeoJSON / CSV metnini buraya yapıştırın
                 </summary>
                 <div className="mt-2 space-y-2">
                   <textarea
                     id="raw-import-textarea"
-                    rows={4}
+                    rows={3}
                     placeholder="<kml>...</kml> veya lat,lng,name..."
                     value={rawText}
                     onChange={(e) => setRawText(e.target.value)}
@@ -349,7 +540,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                     id="parse-raw-text-btn"
                     type="button"
                     onClick={handleParseRawText}
-                    className="bg-slate-800 hover:bg-slate-900 text-white text-xs px-3 py-1.5 rounded-lg font-medium"
+                    className="bg-slate-800 hover:bg-slate-900 text-white text-xs px-3 py-1.5 rounded-lg font-medium cursor-pointer"
                   >
                     Metni Çözümle
                   </button>
@@ -377,78 +568,104 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
               {/* Preview & Import button */}
               {parsedPreview.length > 0 && (
                 <div className="space-y-3 pt-2 border-t border-slate-200">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-800">
-                      {excelMergeStats ? `Eşleşen Hemzemin Geçitler (${parsedPreview.length})` : `Tespit Edilen Noktalar (${parsedPreview.length})`}
-                    </span>
-                    {!excelMergeStats && (
-                      <label className="flex items-center gap-1.5 cursor-pointer text-slate-600 select-none">
-                        <input
-                          id="replace-all-checkbox"
-                          type="checkbox"
-                          checked={replaceAll}
-                          onChange={(e) => setReplaceAll(e.target.checked)}
-                          className="rounded text-sky-600"
-                        />
-                        <span>Mevcut kayıtları sil, sıfırdan yükle</span>
-                      </label>
-                    )}
-                    {excelMergeStats && (
-                      <span className="text-[11px] font-medium text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-full">
-                        Mevcut 92 Nokta Korunuyor
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-800">
+                        {excelMergeStats
+                          ? `Eşleşen Geçitler (${parsedPreview.length})`
+                          : `Aktarılacak Noktalar (${parsedPreview.length})`}
                       </span>
-                    )}
+                    </div>
+
+                    {/* Bulk category switcher */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-slate-500 font-medium">Tümünü Değiştir:</span>
+                      <select
+                        aria-label="Tüm noktaların kategorisini değiştir"
+                        onChange={(e) => {
+                          const val = e.target.value as RailwayPointCategory;
+                          if (val) handleBulkChangeAllPreview(val);
+                        }}
+                        className="text-[11px] font-semibold bg-slate-100 border border-slate-300 rounded-lg px-2 py-1 focus:ring-1 focus:ring-sky-500"
+                        defaultValue=""
+                      >
+                        <option value="" disabled>
+                          Kategori Seç...
+                        </option>
+                        <option value="culvert">🕳️ Menfez</option>
+                        <option value="switch">🔀 Makas</option>
+                        <option value="bridge">🌉 Köprü / Viyadük</option>
+                        <option value="crossing">🚧 Hemzemin Geçit</option>
+                        <option value="station">🚉 İstasyon</option>
+                        <option value="km_marker">📍 KM Taşı</option>
+                        <option value="signal">🚦 Sinyal</option>
+                        <option value="other">📦 Diğer</option>
+                      </select>
+                    </div>
                   </div>
 
-                  {excelMergeStats && (
-                    <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-xs text-amber-900 space-y-1">
-                      <div className="font-bold flex items-center gap-1.5 text-amber-950">
-                        <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
-                        <span>Excel'den Alınacak Bilgiler &amp; Fotoğraflar:</span>
-                      </div>
-                      <p className="text-[11px] leading-relaxed">
-                        Haritanızdaki mevcut 92 nokta bozulmadan, tespit edilen <b>{excelMergeStats.matchedCrossingsCount} hemzemin geçidin</b> özel sekmesindeki teknik özellikleri doldurulacak {excelMergeStats.extractedPhotosCount > 0 ? `ve ${excelMergeStats.extractedPhotosCount} adet fotoğraf eklenecektir.` : '.'}
-                      </p>
-                    </div>
+                  {!excelMergeStats && (
+                    <label className="flex items-center gap-1.5 cursor-pointer text-slate-600 text-xs select-none">
+                      <input
+                        id="replace-all-checkbox"
+                        type="checkbox"
+                        checked={replaceAll}
+                        onChange={(e) => setReplaceAll(e.target.checked)}
+                        className="rounded text-sky-600"
+                      />
+                      <span>Mevcut kayıtları sil, sıfırdan yükle</span>
+                    </label>
                   )}
 
-                  <div className="max-h-48 overflow-y-auto space-y-1.5 border border-slate-200 rounded-xl p-2 bg-slate-50 text-xs">
-                    {parsedPreview.slice(0, 20).map((p, idx) => {
-                      const statItem = excelMergeStats?.details.find((d) => d.pointId === p.id);
+                  {/* Item List with category badge / dropdown per row */}
+                  <div className="max-h-56 overflow-y-auto space-y-1.5 border border-slate-200 rounded-xl p-2 bg-slate-50 text-xs">
+                    {parsedPreview.slice(0, 50).map((p, idx) => {
+                      const cat = p.category || 'km_marker';
+                      const catDef = CATEGORY_DEFINITIONS.find((c) => c.value === cat) || CATEGORY_DEFINITIONS[1];
+
                       return (
-                        <div key={idx} className="flex justify-between items-center bg-white p-2 rounded-lg border border-slate-100">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="font-bold text-slate-800 truncate">{p.title}</span>
-                            {p.category === 'crossing' && (
-                              <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.5 rounded">
-                                Geçit
-                              </span>
-                            )}
-                            {statItem && statItem.photosAdded > 0 && (
-                              <span className="text-[10px] bg-sky-100 text-sky-800 font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                                <ImageIcon className="w-2.5 h-2.5" />
-                                +{statItem.photosAdded} Foto
-                              </span>
-                            )}
+                        <div
+                          key={idx}
+                          className="flex justify-between items-center bg-white p-2 rounded-lg border border-slate-200/80 shadow-2xs hover:border-slate-300"
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
+                            {/* Per-item category selector dropdown */}
+                            <select
+                              value={cat}
+                              onChange={(e) =>
+                                handleRowCategoryChange(idx, e.target.value as RailwayPointCategory)
+                              }
+                              aria-label={`${p.title || `Nokta ${idx + 1}`} kategorisi`}
+                              className={`text-[10px] font-bold px-1.5 py-1 rounded-md border cursor-pointer ${catDef.badgeClass}`}
+                            >
+                              <option value="culvert">🕳️ Menfez</option>
+                              <option value="switch">🔀 Makas</option>
+                              <option value="bridge">🌉 Köprü</option>
+                              <option value="crossing">🚧 Geçit</option>
+                              <option value="station">🚉 İstasyon</option>
+                              <option value="km_marker">📍 KM Taşı</option>
+                              <option value="signal">🚦 Sinyal</option>
+                              <option value="other">📦 Diğer</option>
+                            </select>
+
+                            <span className="font-bold text-slate-800 truncate" title={p.title}>
+                              {p.title}
+                            </span>
                           </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
+
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
                             {p.kmValue && (
-                              <span className="font-mono text-[11px] font-bold text-slate-700 bg-slate-100 px-1 py-0.5 rounded">
+                              <span className="font-mono text-[10px] font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">
                                 KM {p.kmValue}
-                              </span>
-                            )}
-                            {statItem?.fieldsUpdated && statItem.fieldsUpdated.length > 0 && (
-                              <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-150">
-                                {statItem.fieldsUpdated.length} Özellik Güncellenecek
                               </span>
                             )}
                           </div>
                         </div>
                       );
                     })}
-                    {parsedPreview.length > 20 && (
+                    {parsedPreview.length > 50 && (
                       <div className="text-center text-slate-500 text-[11px] pt-1">
-                        ...ve {parsedPreview.length - 20} nokta daha
+                        ...ve {parsedPreview.length - 50} nokta daha
                       </div>
                     )}
                   </div>
@@ -457,15 +674,13 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                     id="apply-import-btn"
                     onClick={handleApplyImport}
                     disabled={isProcessing}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-md transition-colors flex items-center justify-center gap-2"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-md transition-colors flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Upload className="w-4 h-4" />
                     <span>
                       {isProcessing
                         ? 'Senkronize Ediliyor...'
-                        : excelMergeStats
-                        ? `${excelMergeStats.matchedCrossingsCount} Geçidin Bilgilerini & Fotoğraflarını İşle`
-                        : `${parsedPreview.length} Noktayı Yükle`}
+                        : `${parsedPreview.length} Noktayı Sisteme Aktar`}
                     </span>
                   </button>
                 </div>
@@ -475,7 +690,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
             /* Export Tab */
             <div className="space-y-4">
               <p className="text-xs text-slate-600 leading-relaxed">
-                Uygulamadaki tüm demiryolu KM noktalarını, notları ve saha verilerini Google Earth, Google My Maps veya CBS (GIS) yazılımlarında açabileceğiniz standart formatlarda indirebilirsiniz.
+                Uygulamadaki tüm demiryolu KM noktalarını, menfezleri, makasları, geçitleri ve fotoğrafları Google Earth, Google My Maps veya CBS (GIS) yazılımlarında açabileceğiniz standart formatlarda indirebilirsiniz.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -487,7 +702,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                   <Table className="w-6 h-6 text-emerald-700 mb-1.5 group-hover:scale-110 transition-transform" />
                   <span className="font-bold text-xs text-emerald-950">Excel (.xlsx) Tablosu Olarak İndir</span>
                   <span className="text-[11px] text-emerald-800 text-center mt-0.5">
-                    Tüm KM noktaları, koordinatlar ve 10 adet hemzemin geçit teknik parametresi
+                    Tüm KM noktaları, menfezler, makaslar, geçitler ve teknik parametreler
                   </span>
                 </button>
 
@@ -514,7 +729,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                       console.warn('Panoya kopyalanamadı:', e);
                     }
                   }}
-                  className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-violet-50 border border-slate-200 hover:border-violet-300 rounded-2xl transition-all group"
+                  className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-violet-50 border border-slate-200 hover:border-violet-300 rounded-2xl transition-all group cursor-pointer"
                 >
                   {isCopied ? (
                     <Check className="w-6 h-6 text-emerald-600 mb-2 group-hover:scale-110 transition-transform" />
@@ -532,7 +747,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                 <button
                   id="export-kml-btn"
                   onClick={() => exportToKML(points)}
-                  className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-sky-50 border border-slate-200 hover:border-sky-300 rounded-2xl transition-all group"
+                  className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-sky-50 border border-slate-200 hover:border-sky-300 rounded-2xl transition-all group cursor-pointer"
                 >
                   <Download className="w-6 h-6 text-sky-600 mb-2 group-hover:scale-110 transition-transform" />
                   <span className="font-bold text-xs text-slate-800">KML Olarak İndir</span>
@@ -544,7 +759,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                 <button
                   id="export-geojson-btn"
                   onClick={() => exportToGeoJSON(points)}
-                  className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-2xl transition-all group"
+                  className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-2xl transition-all group cursor-pointer"
                 >
                   <Download className="w-6 h-6 text-emerald-600 mb-2 group-hover:scale-110 transition-transform" />
                   <span className="font-bold text-xs text-slate-800">GeoJSON Olarak İndir</span>

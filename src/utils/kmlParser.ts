@@ -35,7 +35,11 @@ export function guessCategory(text: string): RailwayPointCategory {
 /**
  * Parses KML XML text string into RailwayPoint objects
  */
-export function parseKML(kmlText: string, defaultLine: string = 'Kayıtlı Demiryolu Hattı'): Partial<RailwayPoint>[] {
+export function parseKML(
+  kmlText: string,
+  defaultLine: string = 'Kayıtlı Demiryolu Hattı',
+  forcedCategory?: RailwayPointCategory | 'auto'
+): Partial<RailwayPoint>[] {
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(kmlText, 'text/xml');
   const placemarks = xmlDoc.getElementsByTagName('Placemark');
@@ -62,9 +66,20 @@ export function parseKML(kmlText: string, defaultLine: string = 'Kayıtlı Demir
       if (!isNaN(lat) && !isNaN(lng)) {
         const fullText = `${title} ${description}`;
         const kmVal = extractKmValue(fullText) || (title.startsWith('KM') ? title : '');
-        const category = guessCategory(fullText);
+        const autoCat = guessCategory(fullText);
+        const category: RailwayPointCategory =
+          forcedCategory && forcedCategory !== 'auto' ? forcedCategory : autoCat;
 
         let parsedCrossing: any = undefined;
+        let parsedCulvert: any = undefined;
+
+        if (category === 'culvert') {
+          parsedCulvert = {
+            hatti: defaultLine,
+            mihverKlm: kmVal || title,
+          };
+        }
+
         if (category === 'crossing' || description.includes('Geçit') || description.includes('Bariyer') || description.includes('Kaplama')) {
           const mType = description.match(/(?:Geçit Tipi|crossingType)\s*[:=]?\s*([^\n\r<•]+)/i);
           const mSurf = description.match(/(?:Kaplama Cinsi|surfaceType)\s*[:=]?\s*([^\n\r<•]+)/i);
@@ -104,6 +119,7 @@ export function parseKML(kmlText: string, defaultLine: string = 'Kayıtlı Demir
           lng,
           description,
           levelCrossing: parsedCrossing,
+          culvert: parsedCulvert,
           notes: [],
           photos: [],
           createdAt: new Date().toISOString(),
@@ -119,7 +135,11 @@ export function parseKML(kmlText: string, defaultLine: string = 'Kayıtlı Demir
 /**
  * Parses GeoJSON string
  */
-export function parseGeoJSON(jsonText: string, defaultLine: string = 'Kayıtlı Demiryolu Hattı'): Partial<RailwayPoint>[] {
+export function parseGeoJSON(
+  jsonText: string,
+  defaultLine: string = 'Kayıtlı Demiryolu Hattı',
+  forcedCategory?: RailwayPointCategory | 'auto'
+): Partial<RailwayPoint>[] {
   try {
     const geojson = JSON.parse(jsonText);
     const features = geojson.type === 'FeatureCollection' ? geojson.features : [geojson];
@@ -133,6 +153,9 @@ export function parseGeoJSON(jsonText: string, defaultLine: string = 'Kayıtlı 
           const title = props.name || props.title || `KM Noktası ${i + 1}`;
           const description = props.description || props.desc || '';
           const kmVal = props.km || props.kmValue || extractKmValue(`${title} ${description}`);
+          const autoCat = props.category || guessCategory(`${title} ${description}`);
+          const category: RailwayPointCategory =
+            forcedCategory && forcedCategory !== 'auto' ? forcedCategory : autoCat;
 
           results.push({
             id: `geojson-${Date.now()}-${i}`,
@@ -140,13 +163,17 @@ export function parseGeoJSON(jsonText: string, defaultLine: string = 'Kayıtlı 
             kmValue: kmVal,
             lineName: props.line || props.lineName || defaultLine,
             locationDesc: props.location || props.mevki || '',
-            category: props.category || guessCategory(`${title} ${description}`),
+            category,
             lat: Number(lat),
             lng: Number(lng),
             description,
             textStyle: props.textStyle || null,
             titleTextStyle: props.titleTextStyle || null,
             levelCrossing: props.levelCrossing || props.level_crossing || undefined,
+            culvert:
+              category === 'culvert'
+                ? props.culvert || { hatti: props.line || defaultLine, mihverKlm: kmVal || title }
+                : undefined,
             notes: Array.isArray(props.notes) ? props.notes : [],
             photos: Array.isArray(props.photos) ? props.photos : [],
             createdAt: props.createdAt || new Date().toISOString(),
@@ -166,7 +193,12 @@ export function parseGeoJSON(jsonText: string, defaultLine: string = 'Kayıtlı 
 /**
  * Parses generic key-value row (from Excel sheet or CSV) into Partial<RailwayPoint>
  */
-export function parseRowObject(row: Record<string, any>, index: number, defaultLine: string = 'Kayıtlı Demiryolu Hattı'): Partial<RailwayPoint> | null {
+export function parseRowObject(
+  row: Record<string, any>,
+  index: number,
+  defaultLine: string = 'Kayıtlı Demiryolu Hattı',
+  forcedCategory?: RailwayPointCategory | 'auto'
+): Partial<RailwayPoint> | null {
   const normKeys: Record<string, any> = {};
   for (const [k, v] of Object.entries(row)) {
     if (v !== undefined && v !== null && String(v).trim() !== '') {
@@ -195,22 +227,25 @@ export function parseRowObject(row: Record<string, any>, index: number, defaultL
 
   // 3. Category detection
   const rawCat = String(normKeys['category'] ?? normKeys['kategori'] ?? normKeys['tur'] ?? normKeys['tür'] ?? '').trim().toLowerCase();
-  let category: RailwayPointCategory = 'km_marker';
+  let autoCategory: RailwayPointCategory = 'km_marker';
   if (rawCat.includes('gecit') || rawCat.includes('geçit') || rawCat.includes('crossing') || rawCat.includes('hemzemin')) {
-    category = 'crossing';
+    autoCategory = 'crossing';
   } else if (rawCat.includes('makas') || rawCat.includes('switch')) {
-    category = 'switch';
+    autoCategory = 'switch';
   } else if (rawCat.includes('kopru') || rawCat.includes('köprü') || rawCat.includes('viyaduk') || rawCat.includes('viyadük') || rawCat.includes('bridge')) {
-    category = 'bridge';
+    autoCategory = 'bridge';
   } else if (rawCat.includes('menfez') || rawCat.includes('culvert')) {
-    category = 'culvert';
+    autoCategory = 'culvert';
   } else if (rawCat.includes('istasyon') || rawCat.includes('gar') || rawCat.includes('durak') || rawCat.includes('station')) {
-    category = 'station';
+    autoCategory = 'station';
   } else if (rawCat.includes('sinyal') || rawCat.includes('signal')) {
-    category = 'signal';
+    autoCategory = 'signal';
   } else {
-    category = guessCategory(`${title} ${description} ${locationDesc}`);
+    autoCategory = guessCategory(`${title} ${description} ${locationDesc}`);
   }
+
+  const category: RailwayPointCategory =
+    forcedCategory && forcedCategory !== 'auto' ? forcedCategory : autoCategory;
 
   // 4. Level crossing fields (Hemzemin Geçit Özellikleri)
   let levelCrossing: any = undefined;
@@ -226,7 +261,6 @@ export function parseRowObject(row: Record<string, any>, index: number, defaultL
   const curveInfo = normKeys['curveinfo'] ?? normKeys['kurp'] ?? normKeys['kurpbilgisi'] ?? normKeys['kurpbilgileri'] ?? normKeys['yaricap'] ?? normKeys['yarıçap'];
 
   if (category === 'crossing' || crossingType || surfaceType || dailyVehicle || dailyTrain || clearance || skewAngle || intersectedTrack || minSight || railwayGradient || curveInfo) {
-    category = 'crossing';
     levelCrossing = {
       crossingType: crossingType ? String(crossingType).trim() : undefined,
       surfaceType: surfaceType ? String(surfaceType).trim() : undefined,
@@ -241,6 +275,18 @@ export function parseRowObject(row: Record<string, any>, index: number, defaultL
     };
   }
 
+  let culvertDetails: any = undefined;
+  if (category === 'culvert') {
+    culvertDetails = {
+      hatti: lineName || defaultLine,
+      mihverKlm: kmValue || title,
+      aciklikSerbest: normKeys['aciklikserbest'] ?? normKeys['aciklik'] ?? normKeys['açıklık'] ?? undefined,
+      debuseYuksekligi: normKeys['debuseyuksekligi'] ?? normKeys['debuse'] ?? normKeys['debuşe'] ?? undefined,
+      cinsi: normKeys['cinsi'] ?? normKeys['cins'] ?? normKeys['tur'] ?? undefined,
+      bakimSefligi: normKeys['bakimsefligi'] ?? normKeys['seflik'] ?? undefined,
+    };
+  }
+
   return {
     id: `imp-${Date.now()}-${index}`,
     title,
@@ -252,6 +298,7 @@ export function parseRowObject(row: Record<string, any>, index: number, defaultL
     lng: !isNaN(lng) ? lng : 0,
     description,
     levelCrossing,
+    culvert: culvertDetails,
     notes: [],
     photos: [],
     createdAt: new Date().toISOString(),
@@ -262,7 +309,11 @@ export function parseRowObject(row: Record<string, any>, index: number, defaultL
 /**
  * Parses binary Excel file (ArrayBuffer / Uint8Array) into Partial<RailwayPoint>[]
  */
-export function parseExcelBuffer(buffer: ArrayBuffer | Uint8Array, defaultLine: string = 'Kayıtlı Demiryolu Hattı'): Partial<RailwayPoint>[] {
+export function parseExcelBuffer(
+  buffer: ArrayBuffer | Uint8Array,
+  defaultLine: string = 'Kayıtlı Demiryolu Hattı',
+  forcedCategory?: RailwayPointCategory | 'auto'
+): Partial<RailwayPoint>[] {
   try {
     const workbook = XLSX.read(buffer, { type: 'array' });
     const allResults: Partial<RailwayPoint>[] = [];
@@ -292,7 +343,8 @@ export function parseExcelBuffer(buffer: ArrayBuffer | Uint8Array, defaultLine: 
           joined.includes('baslik') ||
           joined.includes('başlık') ||
           joined.includes('kaplama') ||
-          joined.includes('bariyer')
+          joined.includes('bariyer') ||
+          joined.includes('menfez')
         ) {
           headerRowIndex = r;
           break;
@@ -314,7 +366,7 @@ export function parseExcelBuffer(buffer: ArrayBuffer | Uint8Array, defaultLine: 
           }
         });
 
-        const parsed = parseRowObject(rowObj, allResults.length, defaultLine);
+        const parsed = parseRowObject(rowObj, allResults.length, defaultLine, forcedCategory);
         if (parsed && (parsed.kmValue || parsed.title || parsed.lat !== 0 || parsed.lng !== 0)) {
           allResults.push(parsed);
         }
@@ -331,7 +383,11 @@ export function parseExcelBuffer(buffer: ArrayBuffer | Uint8Array, defaultLine: 
 /**
  * Parses CSV text with headers (lat, lng, name/km, etc.)
  */
-export function parseCSV(csvText: string, defaultLine: string = 'Kayıtlı Demiryolu Hattı'): Partial<RailwayPoint>[] {
+export function parseCSV(
+  csvText: string,
+  defaultLine: string = 'Kayıtlı Demiryolu Hattı',
+  forcedCategory?: RailwayPointCategory | 'auto'
+): Partial<RailwayPoint>[] {
   try {
     const workbook = XLSX.read(csvText, { type: 'string' });
     const firstSheetName = workbook.SheetNames[0];
@@ -341,7 +397,7 @@ export function parseCSV(csvText: string, defaultLine: string = 'Kayıtlı Demir
       if (Array.isArray(rows) && rows.length > 0) {
         const results: Partial<RailwayPoint>[] = [];
         rows.forEach((row, idx) => {
-          const parsed = parseRowObject(row, idx, defaultLine);
+          const parsed = parseRowObject(row, idx, defaultLine, forcedCategory);
           if (parsed && (parsed.lat !== 0 || parsed.lng !== 0 || parsed.title)) {
             results.push(parsed);
           }
@@ -376,16 +432,23 @@ export function parseCSV(csvText: string, defaultLine: string = 'Kayıtlı Demir
       const kmValue = kmIdx >= 0 && row[kmIdx] ? row[kmIdx] : extractKmValue(title);
       const lineName = lineIdx >= 0 && row[lineIdx] ? row[lineIdx] : defaultLine;
       const description = descIdx >= 0 && row[descIdx] ? row[descIdx] : '';
+      const autoCat = guessCategory(`${title} ${description}`);
+      const category: RailwayPointCategory =
+        forcedCategory && forcedCategory !== 'auto' ? forcedCategory : autoCat;
 
       results.push({
         id: `csv-${Date.now()}-${i}`,
         title,
         kmValue,
         lineName,
-        category: guessCategory(`${title} ${description}`),
+        category,
         lat,
         lng,
         description,
+        culvert:
+          category === 'culvert'
+            ? { hatti: lineName, mihverKlm: kmValue || title }
+            : undefined,
         notes: [],
         photos: [],
         createdAt: new Date().toISOString(),
