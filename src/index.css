@@ -40,8 +40,13 @@
   animation: trackSleeperMove 0.8s linear infinite;
 }
 
-/* TCDD Marker Clustering Custom Styling */
-.tcdd-marker-cluster-badge {
+/* TCDD Railway Marker Custom Styling */
+.tcdd-marker-cluster-badge,
+.custom-railway-marker,
+.custom-railway-dot-marker,
+.custom-railway-shield-marker,
+.takyidat-warning-marker,
+.parcel-center-marker {
   background: transparent !important;
   border: none !important;
   display: flex !important;

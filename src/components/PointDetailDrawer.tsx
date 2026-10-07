@@ -766,7 +766,7 @@ export const PointDetailDrawer: React.FC<PointDetailDrawerProps> = ({
                             className={`p-3 rounded-xl border flex items-center justify-between gap-3 shadow-xs ${
                               isLifted
                                 ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
-                                : 'bg-red-50 border-red-300 text-red-950 animate-pulse'
+                                : 'bg-red-50 border-red-300 text-red-950'
                             }`}
                           >
                             <div className="flex items-center gap-2.5">

@@ -1,5 +1,26 @@
 [
   {
+    "id": "log-1791350914395-xw33",
+    "timestamp": "2026-10-07T05:28:34.395Z",
+    "action": "TAKYIDAT_DELETE",
+    "status": "warning",
+    "details": "Takyidat silindi: ID tak-1791350909325-4l3h"
+  },
+  {
+    "id": "log-1791350909325-1wkh",
+    "timestamp": "2026-10-07T05:28:29.325Z",
+    "action": "TAKYIDAT_ADD",
+    "status": "success",
+    "details": "Takyidat eklendi: KM 10+000 - 11+000, Hız Sınırı: 40 km/s"
+  },
+  {
+    "id": "log-1791350052062-c41s",
+    "timestamp": "2026-10-07T05:14:12.062Z",
+    "action": "TAKYIDAT_DELETE",
+    "status": "warning",
+    "details": "Takyidat silindi: ID tak-km-54-55"
+  },
+  {
     "id": "log-1791317042932-hfvi",
     "timestamp": "2026-10-06T20:04:02.932Z",
     "action": "GİRİŞ_BAŞARILI",

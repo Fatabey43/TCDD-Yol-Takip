@@ -317,7 +317,7 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={onOpenTakyidat}
                 className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer relative shadow-2xs ${
                   activeTakyidatCount > 0
-                    ? 'bg-red-600 hover:bg-red-500 text-white ring-1 ring-red-400 animate-pulse'
+                    ? 'bg-red-600 hover:bg-red-500 text-white ring-1 ring-red-400'
                     : 'bg-slate-800 hover:bg-slate-700 text-red-300 border border-red-500/30'
                 }`}
                 title="TCDD Takyidat & Hız Kısıtlamaları Paneli (Örn: KM 54-55 arası hız tahditleri)"

@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
@@ -6,6 +7,19 @@ import { createServer as createViteServer } from 'vite';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+// Gzip compression for lightning-fast responses (compress 18MB points to ~1.5MB)
+// Skip compression for SSE streams to avoid buffering delays
+app.use(
+  compression({
+    filter: (req: express.Request, res: express.Response) => {
+      if (req.headers.accept && req.headers.accept.includes('text/event-stream')) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+  })
+);
 
 // Increase limit to handle base64 photos uploaded by users
 app.use(express.json({ limit: '50mb' }));
@@ -30,6 +44,7 @@ app.use(express.static(path.join(process.cwd(), 'public')));
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DATA_FILE = path.join(DATA_DIR, 'railway_points.json');
 const DELETED_FILE = path.join(DATA_DIR, 'deleted_points.json');
+const DELETED_TAKYIDAT_FILE = path.join(DATA_DIR, 'deleted_takyidat.json');
 const DELETED_USERS_FILE = path.join(DATA_DIR, 'deleted_users.json');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const STATE_FILE = path.join(DATA_DIR, 'database_state.json');
@@ -179,6 +194,42 @@ function unrecordDeletedId(id: string) {
   }
 }
 
+// ---------------- TAKYİDAT DELETION PERSISTENCE & BLACKLIST ----------------
+function getDeletedTakyidatIds(): Set<string> {
+  try {
+    if (fs.existsSync(DELETED_TAKYIDAT_FILE)) {
+      const content = fs.readFileSync(DELETED_TAKYIDAT_FILE, 'utf-8');
+      const data = JSON.parse(content);
+      if (Array.isArray(data)) return new Set(data);
+    }
+  } catch (err) {
+    console.error('Error reading deleted takyidat file:', err);
+  }
+  return new Set();
+}
+
+function recordDeletedTakyidatId(id: string) {
+  try {
+    const set = getDeletedTakyidatIds();
+    set.add(id);
+    fs.writeFileSync(DELETED_TAKYIDAT_FILE, JSON.stringify(Array.from(set), null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error recording deleted takyidat ID:', err);
+  }
+}
+
+function unrecordDeletedTakyidatId(id: string) {
+  try {
+    const set = getDeletedTakyidatIds();
+    if (set.has(id)) {
+      set.delete(id);
+      fs.writeFileSync(DELETED_TAKYIDAT_FILE, JSON.stringify(Array.from(set), null, 2), 'utf-8');
+    }
+  } catch (err) {
+    console.error('Error unrecording deleted takyidat ID:', err);
+  }
+}
+
 // ---------------- KM PARSING & ASCENDING ORDER ENGINE ----------------
 function parseKmToNumber(kmValue?: string | null, fallbackText?: string | null): number | null {
   const combined = [kmValue, fallbackText].filter(Boolean).join(' ');
@@ -247,8 +298,14 @@ function sortPointsByKm(points: any[]): any[] {
   return [...points].sort(compareRailwayPointsByKm);
 }
 
+// In-memory cache for ultra-fast point reads (prevents reading & parsing 18MB JSON on every request/check)
+let cachedPoints: any[] | null = null;
+
 // Helper to read points, strictly filtering out deleted, default, and duplicate points
 function getPoints(): any[] {
+  if (cachedPoints !== null) {
+    return cachedPoints;
+  }
   try {
     if (fs.existsSync(DATA_FILE)) {
       const content = fs.readFileSync(DATA_FILE, 'utf-8');
@@ -256,13 +313,15 @@ function getPoints(): any[] {
       if (Array.isArray(data)) {
         const deleted = getDeletedIds();
         const clean = data.filter((p) => p && p.id && !deleted.has(p.id) && !isDefaultPoint(p.id));
-        return sortPointsByKm(deduplicatePoints(clean));
+        cachedPoints = sortPointsByKm(deduplicatePoints(clean));
+        return cachedPoints;
       }
     }
   } catch (err) {
     console.error('Error reading railway points file:', err);
   }
-  return [];
+  cachedPoints = [];
+  return cachedPoints;
 }
 
 // Helper to deduplicate points strictly by exact ID, or EXACT coordinates (< 1 meter) AND matching title
@@ -327,6 +386,7 @@ function savePoints(points: any[], action: string = 'update') {
     const clean = (points || []).filter((p) => p && p.id && !deleted.has(p.id) && !isDefaultPoint(p.id));
     const deduped = deduplicatePoints(clean);
     const sorted = sortPointsByKm(deduped);
+    cachedPoints = sorted;
     fs.writeFileSync(DATA_FILE, JSON.stringify(sorted, null, 2), 'utf-8');
     notifyPointsChanged(action, sorted.length);
   } catch (err) {
@@ -993,6 +1053,14 @@ app.get('/api/health', (req, res) => {
 // GET all points
 app.get('/api/points', (req, res) => {
   const points = getPoints();
+  const etag = `"rev-${currentRevision}-${points.length}"`;
+  res.setHeader('ETag', etag);
+
+  const clientEtag = req.headers['if-none-match'];
+  if (clientEtag && clientEtag === etag) {
+    return res.status(304).end();
+  }
+
   res.json(points);
 });
 
@@ -1416,7 +1484,10 @@ function getTakyidatList(): any[] {
     if (fs.existsSync(TAKYIDAT_FILE)) {
       const raw = fs.readFileSync(TAKYIDAT_FILE, 'utf-8');
       const list = JSON.parse(raw);
-      if (Array.isArray(list)) return list;
+      if (Array.isArray(list)) {
+        const deletedIds = getDeletedTakyidatIds();
+        return list.filter((item) => item && item.id && !deletedIds.has(item.id));
+      }
     }
   } catch (err) {
     console.error('Error reading takyidat file:', err);
@@ -1426,7 +1497,9 @@ function getTakyidatList(): any[] {
 
 function saveTakyidatList(list: any[]) {
   try {
-    fs.writeFileSync(TAKYIDAT_FILE, JSON.stringify(list, null, 2), 'utf-8');
+    const deletedIds = getDeletedTakyidatIds();
+    const cleanList = (list || []).filter((item) => item && item.id && !deletedIds.has(item.id));
+    fs.writeFileSync(TAKYIDAT_FILE, JSON.stringify(cleanList, null, 2), 'utf-8');
   } catch (err) {
     console.error('Error saving takyidat file:', err);
   }
@@ -1436,6 +1509,11 @@ function saveTakyidatList(list: any[]) {
 app.get('/api/takyidat', (req, res) => {
   const list = getTakyidatList();
   res.json(list);
+});
+
+// GET deleted takyidat IDs
+app.get('/api/deleted-takyidat-ids', (req, res) => {
+  res.json(Array.from(getDeletedTakyidatIds()));
 });
 
 // POST new takyidat restriction
@@ -1451,8 +1529,11 @@ app.post('/api/takyidat', (req, res) => {
   const endKmNum = typeof body.endKmNum === 'number' ? body.endKmNum : (parseKmToNumber(endKm) || 0);
   const speedLimit = Number(body.speedLimit) || 30;
 
+  const targetId = body.id || `tak-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  unrecordDeletedTakyidatId(targetId);
+
   const newEntry = {
-    id: body.id || `tak-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    id: targetId,
     startKm: startKm || `${startKmNum}+000`,
     endKm: endKm || `${endKmNum}+000`,
     startKmNum: Math.min(startKmNum, endKmNum),
@@ -1525,12 +1606,9 @@ app.put('/api/takyidat/:id', (req, res) => {
 // DELETE takyidat restriction
 app.delete('/api/takyidat/:id', (req, res) => {
   const { id } = req.params;
+  recordDeletedTakyidatId(id);
   const list = getTakyidatList();
   const filtered = list.filter((item) => item.id !== id);
-
-  if (filtered.length === list.length) {
-    return res.status(404).json({ error: 'Takyidat kaydı bulunamadı' });
-  }
 
   saveTakyidatList(filtered);
   recordAuditLog({

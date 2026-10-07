@@ -402,11 +402,13 @@ export async function fetchRailwayPoints(): Promise<RailwayPoint[]> {
   });
 
   try {
-    const timestamp = Date.now();
+    const lastEtag = localStorage.getItem('tcdd_points_etag');
     const [res, stateRes, delRes] = await Promise.all([
-      fetch(`/api/points?_t=${timestamp}`, { cache: 'no-store' }),
-      fetch(`/api/database-state?_t=${timestamp}`, { cache: 'no-store' }).catch(() => null),
-      fetch(`/api/deleted-ids?_t=${timestamp}`, { cache: 'no-store' }).catch(() => null),
+      fetch('/api/points', {
+        headers: lastEtag ? { 'If-None-Match': lastEtag } : {},
+      }),
+      fetch('/api/database-state').catch(() => null),
+      fetch('/api/deleted-ids').catch(() => null),
     ]);
 
     // 1. Sync deleted IDs from server
@@ -443,11 +445,27 @@ export async function fetchRailwayPoints(): Promise<RailwayPoint[]> {
       }
     }
 
+    if (res.status === 304) {
+      // Fast path: Server data is completely unchanged, return local cache immediately!
+      const localPoints = getLocalCachedPoints();
+      if (localPoints.length > 0) {
+        return sortPointsByKm(localPoints.filter((p) => !deletedIds.has(p.id) && !isDefaultSamplePoint(p.id)).map(normalizePoint));
+      }
+    }
+
     if (!res.ok) {
       console.warn(`Sunucu bağlantı durumu: HTTP ${res.status}`);
       const localPoints = getLocalCachedPoints();
       return localPoints.filter((p) => !deletedIds.has(p.id) && !isDefaultSamplePoint(p.id)).map(normalizePoint);
     }
+
+    const etagHeader = res.headers.get('ETag');
+    if (etagHeader) {
+      try {
+        localStorage.setItem('tcdd_points_etag', etagHeader);
+      } catch {}
+    }
+
     const serverPoints = await res.json();
 
     if (Array.isArray(serverPoints)) {
@@ -471,14 +489,23 @@ export async function fetchRailwayPoints(): Promise<RailwayPoint[]> {
       // If server is empty and no pending offline adds, wipe local caches completely
       if (validServerPoints.length === 0 && pendingUpsertMap.size === 0) {
         saveLocalCachedPoints([]);
-        await clearPointsFromIDB();
+        clearPointsFromIDB().catch(() => {});
         localStorage.removeItem(LOCAL_STORAGE_KEY);
         localStorage.removeItem(LOCAL_BACKUP_KEY);
         localStorage.removeItem(USER_CUSTOM_KEY);
         return [];
       }
 
-      // Read local points and also check IndexedDB for any cached photos
+      // Fast Path: If server returned full points and there are no offline pending actions,
+      // return authoritative points immediately without blocking the main thread on IndexedDB!
+      if (pendingUpsertMap.size === 0 && validServerPoints.length > 0) {
+        const finalPoints = sortPointsByKm(validServerPoints);
+        // Persist to local caches in background
+        saveLocalCachedPoints(finalPoints);
+        return finalPoints;
+      }
+
+      // Fallback path when there are offline pending items
       const localPoints = getLocalCachedPoints();
       const idbPoints = await getPointsFromIDB().catch(() => [] as RailwayPoint[]);
 
@@ -1122,13 +1149,46 @@ export const resetToSamplePoints = resetToDefaultRailwayPoints;
 
 // ---------------- TAKYİDAT (HIZ KISITLAMALARI) CLIENT SERVICE ----------------
 const TAKYIDAT_STORAGE_KEY = 'tcdd_takyidat_restrictions_cache_v1';
+const DELETED_TAKYIDAT_STORAGE_KEY = 'tcdd_deleted_takyidat_ids';
+
+export function getLocalDeletedTakyidatIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DELETED_TAKYIDAT_STORAGE_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch {}
+  return new Set();
+}
+
+export function saveLocalDeletedTakyidatId(id: string): void {
+  try {
+    const set = getLocalDeletedTakyidatIds();
+    set.add(id);
+    localStorage.setItem(DELETED_TAKYIDAT_STORAGE_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
+export function removeLocalDeletedTakyidatId(id: string): void {
+  try {
+    const set = getLocalDeletedTakyidatIds();
+    if (set.has(id)) {
+      set.delete(id);
+      localStorage.setItem(DELETED_TAKYIDAT_STORAGE_KEY, JSON.stringify(Array.from(set)));
+    }
+  } catch {}
+}
 
 export function getLocalCachedTakyidat(): TakyidatSpeedRestriction[] {
   try {
+    const deleted = getLocalDeletedTakyidatIds();
     const raw = localStorage.getItem(TAKYIDAT_STORAGE_KEY);
     if (raw) {
       const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) return arr;
+      if (Array.isArray(arr)) {
+        return arr.filter((t) => t && t.id && !deleted.has(t.id));
+      }
     }
   } catch {}
   return [];
@@ -1136,18 +1196,38 @@ export function getLocalCachedTakyidat(): TakyidatSpeedRestriction[] {
 
 export function saveLocalCachedTakyidat(list: TakyidatSpeedRestriction[]): void {
   try {
-    localStorage.setItem(TAKYIDAT_STORAGE_KEY, JSON.stringify(list));
+    const deleted = getLocalDeletedTakyidatIds();
+    const cleanList = (list || []).filter((t) => t && t.id && !deleted.has(t.id));
+    localStorage.setItem(TAKYIDAT_STORAGE_KEY, JSON.stringify(cleanList));
   } catch {}
 }
 
 export async function fetchTakyidatList(): Promise<TakyidatSpeedRestriction[]> {
   try {
-    const res = await fetch(`/api/takyidat?_t=${Date.now()}`, { cache: 'no-store' });
+    const [res, delRes] = await Promise.all([
+      fetch(`/api/takyidat?_t=${Date.now()}`, { cache: 'no-store' }),
+      fetch(`/api/deleted-takyidat-ids?_t=${Date.now()}`, { cache: 'no-store' }).catch(() => null),
+    ]);
+
+    const deleted = getLocalDeletedTakyidatIds();
+    if (delRes && delRes.ok) {
+      const serverDeleted = await delRes.json();
+      if (Array.isArray(serverDeleted)) {
+        serverDeleted.forEach((id: string) => {
+          if (typeof id === 'string') {
+            deleted.add(id);
+            saveLocalDeletedTakyidatId(id);
+          }
+        });
+      }
+    }
+
     if (res.ok) {
       const list = await res.json();
       if (Array.isArray(list)) {
-        saveLocalCachedTakyidat(list);
-        return list;
+        const cleanList = list.filter((t) => t && t.id && !deleted.has(t.id));
+        saveLocalCachedTakyidat(cleanList);
+        return cleanList;
       }
     }
   } catch (err) {
@@ -1162,6 +1242,7 @@ export async function saveNewTakyidat(
   const startKmNum = parseKmToNumber(entry.startKm) || 0;
   const endKmNum = parseKmToNumber(entry.endKm) || 0;
   const tempId = `tak-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  removeLocalDeletedTakyidatId(tempId);
 
   const newObj: TakyidatSpeedRestriction = {
     ...entry,
@@ -1183,6 +1264,7 @@ export async function saveNewTakyidat(
     });
     if (res.ok) {
       const created = await res.json();
+      removeLocalDeletedTakyidatId(created.id);
       const updatedList = [created, ...local.filter((t) => t.id !== tempId && t.id !== created.id)];
       saveLocalCachedTakyidat(updatedList);
       return created;
@@ -1196,6 +1278,7 @@ export async function saveNewTakyidat(
 export async function updateExistingTakyidat(
   entry: TakyidatSpeedRestriction
 ): Promise<TakyidatSpeedRestriction> {
+  removeLocalDeletedTakyidatId(entry.id);
   const startKmNum = parseKmToNumber(entry.startKm) || entry.startKmNum;
   const endKmNum = parseKmToNumber(entry.endKm) || entry.endKmNum;
 
@@ -1228,6 +1311,7 @@ export async function updateExistingTakyidat(
 }
 
 export async function deleteTakyidatById(id: string): Promise<boolean> {
+  saveLocalDeletedTakyidatId(id);
   const local = getLocalCachedTakyidat();
   saveLocalCachedTakyidat(local.filter((t) => t.id !== id));
 

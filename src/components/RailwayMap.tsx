@@ -37,83 +37,54 @@ interface RailwayMapProps {
   liveGpsCoords?: { lat: number; lng: number } | null;
 }
 
-function createMarkerClusterGroup(): L.MarkerClusterGroup {
-  return (L as any).markerClusterGroup({
-    chunkedLoading: true,
-    chunkInterval: 80,
-    chunkDelay: 15,
-    maxClusterRadius: (zoom: number) => (zoom >= 14 ? 32 : zoom >= 11 ? 48 : 65),
-    spiderfyOnMaxZoom: true,
-    spiderfyDistanceMultiplier: 1.5,
-    showCoverageOnHover: false,
-    zoomToBoundsOnClick: true,
-    removeOutsideVisibleBounds: true,
-    disableClusteringAtZoom: 18,
-    iconCreateFunction: (cluster: any) => {
-      const count = cluster.getChildCount();
-      let sizePx = 42;
-      let badgeColor = 'bg-gradient-to-tr from-indigo-700 via-sky-600 to-indigo-800 border-sky-300 text-white shadow-indigo-900/60';
-      let ringColor = 'border-sky-400/40';
-
-      if (count >= 100) {
-        sizePx = 52;
-        badgeColor = 'bg-gradient-to-tr from-rose-700 via-red-600 to-amber-600 border-amber-300 text-white shadow-rose-950/70';
-        ringColor = 'border-rose-400/50';
-      } else if (count >= 30) {
-        sizePx = 48;
-        badgeColor = 'bg-gradient-to-tr from-amber-600 via-yellow-600 to-amber-700 border-yellow-200 text-white shadow-amber-950/60';
-        ringColor = 'border-amber-400/50';
-      } else if (count >= 10) {
-        sizePx = 44;
-        badgeColor = 'bg-gradient-to-tr from-teal-700 via-emerald-600 to-teal-800 border-emerald-300 text-white shadow-teal-950/60';
-        ringColor = 'border-teal-400/40';
-      }
-
-      const html = `
-        <div class="relative flex items-center justify-center cursor-pointer group transition-transform duration-200 hover:scale-110 notranslate" translate="no">
-          <div class="absolute -inset-2 rounded-full border-2 ${ringColor} animate-pulse pointer-events-none"></div>
-          <div style="width: ${sizePx}px; height: ${sizePx}px;" class="${badgeColor} rounded-full flex flex-col items-center justify-center font-mono font-black border-2 shadow-2xl ring-2 ring-black/40">
-            <span class="text-[9px] leading-none opacity-85 font-bold tracking-tight">KM</span>
-            <span class="text-xs leading-tight font-black tracking-tighter">${count}</span>
-          </div>
-        </div>
-      `;
-
-      return L.divIcon({
-        html,
-        className: 'tcdd-marker-cluster-badge',
-        iconSize: [sizePx, sizePx],
-        iconAnchor: [sizePx / 2, sizePx / 2],
-      });
-    },
-  });
-}
-
 function createMarkerIcon(
   point: RailwayPoint,
   isSelected: boolean,
-  categoryColors: Record<RailwayPointCategory, CategoryColorConfig> = DEFAULT_CATEGORY_COLORS
+  categoryColors: Record<RailwayPointCategory, CategoryColorConfig> = DEFAULT_CATEGORY_COLORS,
+  compactMode: boolean = false
 ) {
   const cat = categoryColors[point.category] || categoryColors.km_marker || DEFAULT_CATEGORY_COLORS.km_marker;
   const cleanKm = formatKmDisplay(point.kmValue, point.title);
-  // Prominently display KM value (e.g. "KM 142+250") or fallback to category label
+  // Prominently display KM value (e.g. "KM 142+250") or fallback to title or category label
   const displayBadge = cleanKm
     ? (cleanKm.toLowerCase().startsWith('km') ? cleanKm : `KM ${cleanKm}`)
-    : (cat.shortLabel || cat.label);
+    : (point.title ? point.title.slice(0, 16) : (cat.shortLabel || cat.label));
 
+  if (compactMode && !isSelected) {
+    // Elegant, highly-visible railway round shield marker along the tracks
+    const html = `
+      <div class="relative flex items-center justify-center cursor-pointer transition-transform duration-150 hover:scale-125 notranslate" translate="no" title="${point.title}${cleanKm ? ' • KM ' + cleanKm : ''}">
+        <div style="background-color: ${cat.bg}; border-color: ${cat.border};"
+             class="w-6 h-6 rounded-full border-2 shadow-md ring-2 ring-white/90 flex items-center justify-center text-white">
+          <span class="w-3.5 h-3.5 flex items-center justify-center">${cat.svgIcon}</span>
+        </div>
+        <div style="border-top-color: ${cat.border};"
+             class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-0 h-0 border-x-3 border-x-transparent border-t-4"></div>
+      </div>
+    `;
+    return L.divIcon({
+      html,
+      className: 'custom-railway-shield-marker',
+      iconSize: [24, 28],
+      iconAnchor: [12, 28],
+      popupAnchor: [0, -28],
+    });
+  }
+
+  // Full detailed railway badge (clean highlight without distracting blinking/ping)
   const html = `
-    <div class="relative flex items-center justify-center cursor-pointer transition-transform duration-200 notranslate ${
-      isSelected ? 'scale-125 z-50' : 'hover:scale-110 z-10'
+    <div class="relative flex items-center justify-center cursor-pointer transition-transform duration-150 notranslate ${
+      isSelected ? 'scale-115 z-50' : 'hover:scale-105 z-10'
     }" translate="no">
       ${
         isSelected
-          ? `<div class="absolute -inset-2.5 rounded-full bg-amber-400/40 animate-ping"></div>`
+          ? `<div class="absolute -inset-1.5 rounded-full ring-2 ring-amber-400 bg-amber-400/30"></div>`
           : ''
       }
       <div style="background-color: ${cat.bg}; border-color: ${
     isSelected ? '#fbbf24' : cat.border
   }; color: ${cat.text || '#ffffff'};"
-           class="flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono font-bold text-xs shadow-lg border-2 whitespace-nowrap min-w-max">
+           class="flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono font-bold text-xs shadow-md border-2 whitespace-nowrap min-w-max">
         <span class="flex-shrink-0 flex items-center justify-center w-3.5 h-3.5">${cat.svgIcon}</span>
         <span class="tracking-tight text-[11px] font-bold notranslate" translate="no">${displayBadge}</span>
       </div>
@@ -125,8 +96,8 @@ function createMarkerIcon(
   return L.divIcon({
     html,
     className: 'custom-railway-marker',
-    iconSize: [100, 32],
-    iconAnchor: [50, 32],
+    iconSize: [110, 32],
+    iconAnchor: [55, 32],
     popupAnchor: [0, -32],
   });
 }
@@ -156,27 +127,30 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
-  const markersLayerRef = useRef<L.LayerGroup | L.MarkerClusterGroup | null>(null);
+  const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const markerInstancesMapRef = useRef<Map<string, L.Marker>>(new Map());
   const railwayLayerRef = useRef<L.TileLayer | null>(null);
   const measureLayerRef = useRef<L.LayerGroup | null>(null);
   const takyidatLayerRef = useRef<L.LayerGroup | null>(null);
   const parcelsLayerRef = useRef<L.LayerGroup | null>(null);
 
-  const [enableClustering, setEnableClustering] = useState<boolean>(() => {
+  // Clean Railway Layout State: 'smart' (zoom-adaptive dots when zoomed out, badges when zoomed in) or 'all' (always full badges)
+  const [labelMode, setLabelMode] = useState<'smart' | 'all'>(() => {
     try {
-      const stored = localStorage.getItem('tcdd_marker_clustering_enabled');
-      return stored !== null ? stored === 'true' : true;
+      const stored = localStorage.getItem('tcdd_railway_label_mode');
+      return (stored === 'all' || stored === 'smart') ? stored : 'smart';
     } catch {
-      return true;
+      return 'smart';
     }
   });
 
+  const [currentZoom, setCurrentZoom] = useState<number>(7);
+
   useEffect(() => {
     try {
-      localStorage.setItem('tcdd_marker_clustering_enabled', String(enableClustering));
+      localStorage.setItem('tcdd_railway_label_mode', labelMode);
     } catch {}
-  }, [enableClustering]);
+  }, [labelMode]);
 
   const [mapType, setMapType] = useState<'streets' | 'google-earth' | 'google-satellite' | 'esri-satellite'>('google-earth');
   const [showRailwayOverlay, setShowRailwayOverlay] = useState<boolean>(true);
@@ -192,6 +166,12 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
   const [hoverPoint, setHoverPoint] = useState<LatLngPoint | null>(null);
 
   // Refs to eliminate stale closure bugs in map click handlers
+  const onSelectPointRef = useRef(onSelectPoint);
+  onSelectPointRef.current = onSelectPoint;
+
+  const onOpenTakyidatRef = useRef(onOpenTakyidat);
+  onOpenTakyidatRef.current = onOpenTakyidat;
+
   const isAddModeRef = useRef(isAddMode);
   isAddModeRef.current = isAddMode;
 
@@ -311,19 +291,29 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
       }
     });
 
-    // Real-time mouse movement listener like Google Earth / Maps ruler:
-    // As the mouse moves, dynamic distance updates in real time
+    // Listen to zoom changes to adaptively switch marker compactness
+    map.on('zoomend', () => {
+      setCurrentZoom(map.getZoom());
+    });
+
+    // Real-time mouse movement listener like Google Earth / Maps ruler with requestAnimationFrame throttling
+    let hoverRafId: number | null = null;
     map.on('mousemove', (e: L.LeafletMouseEvent) => {
       if (isMeasuringRef.current && measurePointsRef.current.length > 0) {
-        setHoverPoint({ lat: e.latlng.lat, lng: e.latlng.lng });
+        if (hoverRafId) cancelAnimationFrame(hoverRafId);
+        hoverRafId = requestAnimationFrame(() => {
+          setHoverPoint({ lat: e.latlng.lat, lng: e.latlng.lng });
+        });
       }
     });
 
     map.on('mouseout', () => {
+      if (hoverRafId) cancelAnimationFrame(hoverRafId);
       setHoverPoint(null);
     });
 
     return () => {
+      if (hoverRafId) cancelAnimationFrame(hoverRafId);
       map.remove();
       mapInstanceRef.current = null;
     };
@@ -568,37 +558,27 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
     }
   }, [measurePoints, hoverPoint, isMeasuring]);
 
-  // Update & Render Markers (Clustered or Flat Layer Group with Chunked Loading)
+  const isCompact = labelMode === 'smart' && currentZoom < 13;
+
+  // 1. Update & Render Markers on the map (Clean Flat Layer without confusing clusters)
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    // Check if we need to switch or initialize between ClusterGroup and plain LayerGroup
-    const currentLayer = markersLayerRef.current;
-    const isCurrentlyCluster = currentLayer && typeof (currentLayer as any).zoomToShowLayer === 'function';
-
-    let layerToUse: L.LayerGroup | L.MarkerClusterGroup;
-    if (!currentLayer || Boolean(isCurrentlyCluster) !== Boolean(enableClustering)) {
-      if (currentLayer) {
-        map.removeLayer(currentLayer);
-      }
-      layerToUse = enableClustering
-        ? createMarkerClusterGroup()
-        : L.layerGroup();
-      layerToUse.addTo(map);
-      markersLayerRef.current = layerToUse;
-    } else {
-      layerToUse = currentLayer;
+    let layer = markersLayerRef.current;
+    if (!layer) {
+      layer = L.layerGroup().addTo(map);
+      markersLayerRef.current = layer;
     }
 
-    layerToUse.clearLayers();
+    layer.clearLayers();
     markerInstancesMapRef.current.clear();
 
-    const markersList: L.Marker[] = [];
+    const selectedId = selectedPoint?.id;
 
     points.forEach((point) => {
-      const isSelected = selectedPoint?.id === point.id;
-      const icon = createMarkerIcon(point, isSelected, categoryColors);
+      const isSelected = selectedId === point.id;
+      const icon = createMarkerIcon(point, isSelected, categoryColors, isCompact);
 
       const marker = L.marker([point.lat, point.lng], { icon });
 
@@ -612,12 +592,11 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
           onPickLivePointRef.current(point.lat, point.lng);
           return;
         }
-        // If measuring, allow snapping this point into measurement
         if (isMeasuringRef.current) {
           setMeasurePoints((prev) => [...prev, { lat: point.lat, lng: point.lng }]);
           return;
         }
-        onSelectPoint(point);
+        onSelectPointRef.current(point);
       });
 
       const cleanKm = formatKmDisplay(point.kmValue, point.title);
@@ -629,31 +608,52 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
           <div class="text-slate-500 text-[11px]">${point.lineName}${point.locationDesc ? ` • ${point.locationDesc}` : ''}</div>
         </div>
       `,
-        { direction: 'top', offset: [0, -32] }
+        { direction: 'top', offset: [0, isCompact ? -12 : -32] }
       );
 
       markerInstancesMapRef.current.set(point.id, marker);
-      markersList.push(marker);
+      layer.addLayer(marker);
     });
 
-    if (enableClustering && typeof (layerToUse as any).addLayers === 'function') {
-      (layerToUse as any).addLayers(markersList);
-    } else {
-      markersList.forEach((m) => layerToUse.addLayer(m));
+    if (selectedId && markerInstancesMapRef.current.has(selectedId)) {
+      const curMarker = markerInstancesMapRef.current.get(selectedId)!;
+      curMarker.openTooltip();
     }
+  }, [points, categoryColors, isCompact]);
 
-    // If a point is selected, zoom/pan to it and reveal it from inside cluster
-    if (selectedPoint && markerInstancesMapRef.current.has(selectedPoint.id)) {
-      const selectedMarker = markerInstancesMapRef.current.get(selectedPoint.id)!;
-      if (enableClustering && typeof (layerToUse as any).zoomToShowLayer === 'function') {
-        (layerToUse as any).zoomToShowLayer(selectedMarker, () => {
-          selectedMarker.openTooltip();
-        });
-      } else {
-        selectedMarker.openTooltip();
+  // 2. High-performance Isolated Selected Marker Highlight (0ms latency, zero marker recreation)
+  const prevSelectedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prevId = prevSelectedIdRef.current;
+    const currentId = selectedPoint?.id || null;
+    if (prevId === currentId) return;
+
+    if (prevId && markerInstancesMapRef.current.has(prevId)) {
+      const prevMarker = markerInstancesMapRef.current.get(prevId)!;
+      const prevPt = points.find((p) => p.id === prevId);
+      if (prevPt) {
+        prevMarker.setIcon(createMarkerIcon(prevPt, false, categoryColors, isCompact));
       }
     }
-  }, [points, selectedPoint, onSelectPoint, categoryColors, enableClustering]);
+
+    if (currentId && markerInstancesMapRef.current.has(currentId)) {
+      const curMarker = markerInstancesMapRef.current.get(currentId)!;
+      const curPt = points.find((p) => p.id === currentId);
+      if (curPt) {
+        curMarker.setIcon(createMarkerIcon(curPt, true, categoryColors, false));
+        curMarker.openTooltip();
+        if (mapInstanceRef.current) {
+          const center = mapInstanceRef.current.getCenter();
+          const dist = Math.hypot(center.lat - curPt.lat, center.lng - curPt.lng);
+          if (dist > 0.05) {
+            mapInstanceRef.current.panTo([curPt.lat, curPt.lng], { animate: true });
+          }
+        }
+      }
+    }
+
+    prevSelectedIdRef.current = currentId;
+  }, [selectedPoint, points, categoryColors, isCompact]);
 
   // Render Takyidat (Speed Restriction Segments & Warning Badges) on the Railway Map
   useEffect(() => {
@@ -766,8 +766,8 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 
       const badgeHtml = `
         <div class="cursor-pointer group relative flex items-center justify-center notranslate" translate="no" title="Takyidat: KM ${restriction.startKm} - ${restriction.endKm} (${restriction.speedLimit} km/s)">
-          <div class="absolute -inset-1 rounded-full ${isLifted ? 'bg-emerald-400/30' : 'bg-red-500/40 animate-ping'}"></div>
-          <div class="w-10 h-10 rounded-full border-2 ${isLifted ? 'border-emerald-600 bg-white text-emerald-800' : 'border-red-600 bg-white text-red-950'} flex flex-col items-center justify-center shadow-xl ring-2 ${isLifted ? 'ring-emerald-300' : 'ring-red-400/80'} transform transition-transform group-hover:scale-125">
+          <div class="absolute -inset-1 rounded-full ${isLifted ? 'bg-emerald-400/20' : 'bg-red-500/20'}"></div>
+          <div class="w-10 h-10 rounded-full border-2 ${isLifted ? 'border-emerald-600 bg-white text-emerald-800' : 'border-red-600 bg-white text-red-950'} flex flex-col items-center justify-center shadow-lg ring-2 ${isLifted ? 'ring-emerald-300' : 'ring-red-400/80'} transform transition-transform group-hover:scale-110">
             <span class="text-[7px] font-black uppercase text-red-600 leading-none">HIZ</span>
             <span class="text-xs font-black font-mono leading-none">${restriction.speedLimit}</span>
             <span class="text-[6px] font-bold text-slate-500 leading-none">KM/S</span>
@@ -784,7 +784,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
 
       const badgeMarker = L.marker(midCoord, { icon: badgeIcon }).addTo(takyidatGroup);
       badgeMarker.on('click', () => {
-        if (onOpenTakyidat) onOpenTakyidat();
+        if (onOpenTakyidatRef.current) onOpenTakyidatRef.current();
       });
       badgeMarker.bindTooltip(
         `
@@ -799,7 +799,7 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
         { direction: 'top', offset: [0, -16] }
       );
     });
-  }, [points, takyidatRestrictions, showTakyidatOverlay, onOpenTakyidat]);
+  }, [points, takyidatRestrictions, showTakyidatOverlay]);
 
   // Render Railway Parcels / Demiryolu Arazileri Polygons & Badges
   useEffect(() => {
@@ -1469,21 +1469,21 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
               )}
             </button>
 
-            {/* Marker Clustering & Overlays Section */}
+            {/* Marker Layout & Overlays Section */}
             <div className="pt-2 border-t border-slate-100 space-y-1">
-              {/* Marker Clustering Toggle */}
-              <label className="flex items-center justify-between cursor-pointer select-none text-emerald-800 py-1 font-bold bg-emerald-50/70 px-2 rounded-lg border border-emerald-200/60 hover:bg-emerald-50 transition-colors">
+              {/* Smart Railway Layout Toggle */}
+              <label className="flex items-center justify-between cursor-pointer select-none text-sky-900 py-1 font-bold bg-sky-50/80 px-2 rounded-lg border border-sky-200/60 hover:bg-sky-50 transition-colors">
                 <span className="flex items-center gap-1.5 text-xs">
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Noktaları Kümele (Hızlı Mod)</span>
+                  <Sparkles className="w-3.5 h-3.5 text-sky-600" />
+                  <span>Akıllı Ray Düzeni</span>
                 </span>
                 <input
-                  id="map-toggle-marker-clustering"
+                  id="map-toggle-smart-layout"
                   type="checkbox"
-                  checked={enableClustering}
-                  onChange={(e) => setEnableClustering(e.target.checked)}
-                  className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
-                  title="Marker Clustering (Kümeleme) modunu açıp kapatır"
+                  checked={labelMode === 'smart'}
+                  onChange={(e) => setLabelMode(e.target.checked ? 'smart' : 'all')}
+                  className="rounded text-sky-600 focus:ring-sky-500 w-4 h-4 cursor-pointer"
+                  title="Uzaklaştığında sade ray noktası, yaklaştığında KM etiketleri gösterir"
                 />
               </label>
 
@@ -1557,18 +1557,15 @@ export const RailwayMap: React.FC<RailwayMapProps> = ({
           <span>
             {points.length} demiryolu noktası kayıtlı
           </span>
-          {enableClustering && (
-            <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1">
-              <Sparkles className="w-2.5 h-2.5 text-emerald-400" />
-              <span>Kümeleme Aktif</span>
-            </span>
-          )}
+          <span className="px-1.5 py-0.5 rounded-md bg-sky-500/20 text-sky-300 text-[10px] font-bold border border-sky-500/30 flex items-center gap-1">
+            <span>{labelMode === 'smart' ? 'Akıllı Ray Düzeni' : 'Tüm Etiketler'}</span>
+          </span>
         </div>
 
         {takyidatRestrictions.some((r) => r.status === 'active') && onOpenTakyidat && (
           <button
             onClick={onOpenTakyidat}
-            className="bg-red-600/95 hover:bg-red-500 backdrop-blur-md text-white px-3 py-1.5 rounded-xl shadow-lg border border-red-400/60 flex items-center gap-2 text-xs font-bold transition-all active:scale-95 cursor-pointer animate-pulse"
+            className="bg-red-600/95 hover:bg-red-500 backdrop-blur-md text-white px-3 py-1.5 rounded-xl shadow-lg border border-red-400/60 flex items-center gap-2 text-xs font-bold transition-all active:scale-95 cursor-pointer"
             title="Aktif Takyidat ve Hız Tahditlerini Listele"
           >
             <Gauge className="w-3.5 h-3.5 text-amber-200" />

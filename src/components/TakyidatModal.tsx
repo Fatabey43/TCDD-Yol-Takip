@@ -825,7 +825,7 @@ export const TakyidatModal: React.FC<TakyidatModalProps> = ({
                             <span
                               className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
                                 isActive
-                                  ? 'bg-red-500/10 text-red-700 border-red-300 animate-pulse'
+                                  ? 'bg-red-500/10 text-red-700 border-red-300'
                                   : isPlanned
                                   ? 'bg-amber-500/10 text-amber-700 border-amber-300'
                                   : 'bg-emerald-500/10 text-emerald-700 border-emerald-300'
@@ -924,7 +924,7 @@ export const TakyidatModal: React.FC<TakyidatModalProps> = ({
         {/* Modal Footer */}
         <div className="px-6 py-3 bg-slate-900 text-slate-300 text-xs flex items-center justify-between border-t border-slate-800">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
             <span className="text-[11px]">Tüm takyidat hız sınırları harita üzerinde sarı-kırmızı çizgiler ve hız rozetleri olarak canlı gösterilir.</span>
           </div>
           <button

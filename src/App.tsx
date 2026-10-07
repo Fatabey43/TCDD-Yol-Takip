@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { RailwayPoint, RailwayPointCategory, FilterOptions } from './types.ts';
 import {
   fetchRailwayPoints,
+  getLocalCachedPoints,
   saveNewPoint,
   updateExistingPoint,
   deletePointById,
@@ -13,10 +14,12 @@ import {
   resetToSamplePoints,
   syncAllPhotosToServer,
   fetchTakyidatList,
+  getLocalCachedTakyidat,
   saveNewTakyidat,
   updateExistingTakyidat,
   deleteTakyidatById,
   fetchParcelsList,
+  getLocalCachedParcels,
   saveNewParcel,
   updateExistingParcel,
   deleteParcelById,
@@ -63,8 +66,22 @@ import { TrainTransitionOverlay } from './components/TrainTransitionOverlay.tsx'
 
 export default function App() {
   const { user, isLoading: authLoading, canEdit, canDelete, isAdmin, canAddPoint } = useAuth();
-  const [points, setPoints] = useState<RailwayPoint[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [points, setPoints] = useState<RailwayPoint[]>(() => {
+    try {
+      const cached = getLocalCachedPoints();
+      return Array.isArray(cached) ? cached : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    try {
+      const cached = getLocalCachedPoints();
+      return !(Array.isArray(cached) && cached.length > 0);
+    } catch {
+      return true;
+    }
+  });
   const [selectedPoint, setSelectedPoint] = useState<RailwayPoint | null>(null);
   const [pointToDelete, setPointToDelete] = useState<RailwayPoint | null>(null);
   const [isDeletingPoint, setIsDeletingPoint] = useState<boolean>(false);
@@ -88,12 +105,26 @@ export default function App() {
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
   const [workLogPoint, setWorkLogPoint] = useState<RailwayPoint | null>(null);
   const [isTakyidatModalOpen, setIsTakyidatModalOpen] = useState<boolean>(false);
-  const [takyidatList, setTakyidatList] = useState<TakyidatSpeedRestriction[]>([]);
+  const [takyidatList, setTakyidatList] = useState<TakyidatSpeedRestriction[]>(() => {
+    try {
+      const cached = getLocalCachedTakyidat();
+      return Array.isArray(cached) ? cached : [];
+    } catch {
+      return [];
+    }
+  });
   const [takyidatPickMode, setTakyidatPickMode] = useState<'start' | 'end' | 'both' | 'both-step2' | null>(null);
   const [takyidatFormDraft, setTakyidatFormDraft] = useState<TakyidatFormDraft | null>(null);
   const [pointFormDraft, setPointFormDraft] = useState<any>(null);
   const [isParcelModalOpen, setIsParcelModalOpen] = useState<boolean>(false);
-  const [parcelsList, setParcelsList] = useState<RailwayParcel[]>([]);
+  const [parcelsList, setParcelsList] = useState<RailwayParcel[]>(() => {
+    try {
+      const cached = getLocalCachedParcels();
+      return Array.isArray(cached) ? cached : [];
+    } catch {
+      return [];
+    }
+  });
   
   // Live GPS KM State
   const [liveGpsCoords, setLiveGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -164,18 +195,34 @@ export default function App() {
   // Load points, takyidat & parcels on mount
   const loadPoints = useCallback(async () => {
     try {
-      const [data, takData, parcelsData] = await Promise.all([
+      const [data, takData, parcelsData, verRes] = await Promise.all([
         fetchRailwayPoints(),
         fetchTakyidatList().catch(() => []),
         fetchParcelsList().catch(() => []),
+        fetch(`/api/points/version?_t=${Date.now()}`, { cache: 'no-store' }).catch(() => null),
       ]);
-      const sorted = sortPointsByKm(data);
-      setPoints(sorted);
+
+      if (verRes && verRes.ok) {
+        try {
+          const verInfo = await verRes.json();
+          if (verInfo && typeof verInfo.revision === 'number') {
+            lastRevisionRef.current = verInfo.revision;
+          }
+        } catch {}
+      }
+
+      setPoints((prev) => {
+        if (prev.length === data.length && prev.length > 0) {
+          const unchanged = prev.every((p, i) => p.id === data[i]?.id && p.updatedAt === data[i]?.updatedAt);
+          if (unchanged) return prev;
+        }
+        return sortPointsByKm(data);
+      });
       setTakyidatList(takData);
       setParcelsList(parcelsData);
-      currentPointCountRef.current = sorted.length;
+      currentPointCountRef.current = data.length;
       // If a point was selected, refresh its data reference
-      setSelectedPoint((curr) => (curr ? sorted.find((p) => p.id === curr.id) || null : null));
+      setSelectedPoint((curr) => (curr ? data.find((p) => p.id === curr.id) || null : null));
     } catch (err) {
       console.error('Noktalar yüklenemedi:', err);
     } finally {
@@ -292,39 +339,8 @@ export default function App() {
 
     setupSSE();
 
-    // 3. Device lifecycle listeners (phone lock/unlock, tab switch, coming back online)
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        lastRevisionRef.current = 0;
-        currentPointCountRef.current = -1;
-        setupSSE();
-        loadPoints();
-      }
-    };
-    const handleFocus = () => {
-      loadPoints();
-    };
-    const handleOnline = () => {
-      setIsOnline(true);
-      showToast('İnternet bağlantısı sağlandı. Veriler eşitleniyor...');
-      lastRevisionRef.current = 0;
-      currentPointCountRef.current = -1;
-      setupSSE();
-      loadPoints();
-    };
-    const handleOffline = () => {
-      setIsOnline(false);
-      showToast('Çevrimdışı (Offline) moda geçildi. Sahadaki tüm noktalarınız cihazınızda güvende.');
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    // 4. Fast lightweight version & count poll fallback (checks revision & point count every 3 seconds)
-    // Ensures if any device has extra or missing points, it automatically synchronizes immediately!
-    const versionPollInterval = setInterval(async () => {
+    // 3. Lightweight check function that only reloads if revision or count actually changed
+    const checkVersionAndLoadIfNeeded = async () => {
       try {
         const res = await fetch(`/api/points/version?_t=${Date.now()}`, { cache: 'no-store' });
         if (res.ok) {
@@ -342,7 +358,35 @@ export default function App() {
       } catch {
         // silent
       }
-    }, 3000);
+    };
+
+    // 4. Device lifecycle listeners (phone lock/unlock, tab switch, coming back online)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkVersionAndLoadIfNeeded();
+      }
+    };
+    const handleFocus = () => {
+      checkVersionAndLoadIfNeeded();
+    };
+    const handleOnline = () => {
+      setIsOnline(true);
+      showToast('İnternet bağlantısı sağlandı. Veriler eşitleniyor...');
+      setupSSE();
+      checkVersionAndLoadIfNeeded();
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      showToast('Çevrimdışı (Offline) moda geçildi. Sahadaki tüm noktalarınız cihazınızda güvende.');
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // 5. Quiet fallback polling interval (every 12 seconds instead of aggressive 3s storm)
+    const versionPollInterval = setInterval(checkVersionAndLoadIfNeeded, 12000);
 
     // In background, automatically scan local database and sync photos to cloud server
     const autoSyncTimer = setTimeout(async () => {
