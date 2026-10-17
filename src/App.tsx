@@ -6,6 +6,7 @@ import {
   saveNewPoint,
   updateExistingPoint,
   deletePointById,
+  bulkDeleteRailwayPoints,
   addPointNote,
   deletePointNote,
   addPointPhoto,
@@ -18,11 +19,14 @@ import {
   saveNewTakyidat,
   updateExistingTakyidat,
   deleteTakyidatById,
+  bulkDeleteTakyidat,
   fetchParcelsList,
   getLocalCachedParcels,
   saveNewParcel,
   updateExistingParcel,
   deleteParcelById,
+  bulkDeleteParcels,
+  clearAllParcels,
   saveParcelsBatch,
 } from './services/api.ts';
 import { exportToJSON } from './utils/kmlParser.ts';
@@ -685,6 +689,27 @@ export default function App() {
     }
   };
 
+  const handleBulkDeletePoints = async (ids: string[]) => {
+    if (!canDelete) {
+      showToast('Demiryolu noktası silme yetkisi sadece Yöneticidedir.');
+      return;
+    }
+    if (!ids || ids.length === 0) return;
+    setIsDeletingPoint(true);
+    try {
+      await bulkDeleteRailwayPoints(ids);
+      const set = new Set(ids);
+      setPoints((prev) => prev.filter((p) => !set.has(p.id)));
+      if (selectedPoint && set.has(selectedPoint.id)) {
+        setSelectedPoint(null);
+      }
+      broadcastLocalChange();
+      showToast(`${ids.length} adet demiryolu noktası başarıyla silindi.`);
+    } finally {
+      setIsDeletingPoint(false);
+    }
+  };
+
   // Add Note
   const handleAddNote = async (pointId: string, text: string, author: string) => {
     const newNote = await addPointNote(pointId, text, author);
@@ -995,6 +1020,24 @@ export default function App() {
     showToast('Takyidat hız tahdidi kaydı silindi.');
   };
 
+  const handleBulkDeleteTakyidat = async (ids: string[]) => {
+    if (!ids || ids.length === 0) return;
+    await bulkDeleteTakyidat(ids);
+    const set = new Set(ids);
+    setTakyidatList((prev) => prev.filter((t) => !set.has(t.id)));
+    broadcastLocalChange();
+    showToast(`${ids.length} adet takyidat hız tahdidi silindi.`);
+  };
+
+  const handleClearAllTakyidat = async () => {
+    const allIds = takyidatList.map((t) => t.id);
+    if (allIds.length === 0) return;
+    await bulkDeleteTakyidat(allIds);
+    setTakyidatList([]);
+    broadcastLocalChange();
+    showToast('Tüm takyidat hız sınırları kalıcı olarak temizlendi.');
+  };
+
   const handleFocusTakyidatSegment = (startKmNum: number, endKmNum: number) => {
     // Switch to map view
     if (viewMode === 'list') {
@@ -1165,6 +1208,22 @@ export default function App() {
     showToast('Demiryolu kadastro parsel kaydı silindi.');
   };
 
+  const handleBulkDeleteParcels = async (ids: string[]) => {
+    if (!ids || ids.length === 0) return;
+    await bulkDeleteParcels(ids);
+    const set = new Set(ids);
+    setParcelsList((prev) => prev.filter((p) => !set.has(p.id)));
+    broadcastLocalChange();
+    showToast(`${ids.length} adet kadastro parseli kalıcı olarak silindi.`);
+  };
+
+  const handleClearAllParcels = async () => {
+    await clearAllParcels();
+    setParcelsList([]);
+    broadcastLocalChange();
+    showToast('Tüm kadastro parselleri kalıcı olarak temizlendi.');
+  };
+
   const handleBatchImportParcels = async (list: RailwayParcel[]) => {
     await saveParcelsBatch(list);
     setParcelsList((prev) => {
@@ -1311,6 +1370,7 @@ export default function App() {
                 isOpen={isSidebarOpen}
                 onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
                 onDeletePoint={(point) => setPointToDelete(point)}
+                onBulkDeletePoints={handleBulkDeletePoints}
               />
             </div>
 
@@ -1549,6 +1609,8 @@ export default function App() {
         onAddRestriction={handleAddTakyidat}
         onUpdateRestriction={handleUpdateTakyidat}
         onDeleteRestriction={handleDeleteTakyidat}
+        onBulkDeleteRestrictions={handleBulkDeleteTakyidat}
+        onClearAllRestrictions={handleClearAllTakyidat}
         onFocusSegment={handleFocusTakyidatSegment}
         availableLines={availableLines}
         onStartPickOnMap={handleStartTakyidatPickOnMap}
@@ -1566,6 +1628,8 @@ export default function App() {
         onAddParcel={handleAddParcel}
         onUpdateParcel={handleUpdateParcel}
         onDeleteParcel={handleDeleteParcel}
+        onBulkDeleteParcels={handleBulkDeleteParcels}
+        onClearAllParcels={handleClearAllParcels}
         onBatchImportParcels={handleBatchImportParcels}
         onFocusParcelOnMap={handleFocusParcelOnMap}
       />

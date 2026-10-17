@@ -1,8 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { RailwayPoint, TakyidatSpeedRestriction } from '../types.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 import { formatKmDisplay } from '../utils/categoryColors.ts';
 import { sortPointsByKm } from '../utils/kmUtils.ts';
+import { DeleteConfirmModal } from './DeleteConfirmModal.tsx';
 import {
   Gauge,
   Plus,
@@ -24,6 +25,10 @@ import {
   ListFilter,
   Navigation,
   BarChart2,
+  ArrowUp,
+  ArrowDown,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { TakyidatAnalyticsView } from './TakyidatAnalyticsView.tsx';
 
@@ -50,6 +55,8 @@ interface TakyidatModalProps {
   onAddRestriction: (entry: Omit<TakyidatSpeedRestriction, 'id' | 'createdAt' | 'updatedAt' | 'startKmNum' | 'endKmNum'>) => Promise<void>;
   onUpdateRestriction: (entry: TakyidatSpeedRestriction) => Promise<void>;
   onDeleteRestriction: (id: string) => Promise<void>;
+  onBulkDeleteRestrictions?: (ids: string[]) => Promise<void>;
+  onClearAllRestrictions?: () => Promise<void>;
   onFocusSegment?: (startKmNum: number, endKmNum: number) => void;
   availableLines?: string[];
   onStartPickOnMap?: (target: 'start' | 'end' | 'both', currentDraft: TakyidatFormDraft) => void;
@@ -65,6 +72,8 @@ export const TakyidatModal: React.FC<TakyidatModalProps> = ({
   onAddRestriction,
   onUpdateRestriction,
   onDeleteRestriction,
+  onBulkDeleteRestrictions,
+  onClearAllRestrictions,
   onFocusSegment,
   availableLines = ['Eskişehir-Konya'],
   onStartPickOnMap,
@@ -74,6 +83,37 @@ export const TakyidatModal: React.FC<TakyidatModalProps> = ({
   const { canAddPoint, canDelete } = useAuth();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<TakyidatSpeedRestriction | null>(null);
+
+  // Bulk delete & selection states
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+  const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<TakyidatSpeedRestriction | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleScrollToTop = () => {
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleScrollToBottom = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
+    }
+  };
+
+  const toggleSelect = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   // Form states
   const [startKm, setStartKm] = useState('54+000');
@@ -424,7 +464,10 @@ export const TakyidatModal: React.FC<TakyidatModalProps> = ({
         </div>
 
         {/* Main Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+        <div
+          ref={scrollContainerRef}
+          className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 prominent-scrollbar relative min-h-0"
+        >
           {/* Add / Edit Form Card */}
           {isFormOpen && (
             <form
@@ -766,6 +809,61 @@ export const TakyidatModal: React.FC<TakyidatModalProps> = ({
             </form>
           )}
 
+          {/* Bulk Selection and Action Toolbar */}
+          {filteredList.length > 0 && canDelete && (
+            <div className="bg-slate-100 border border-slate-200 rounded-xl px-4 py-2 flex items-center justify-between flex-wrap gap-2 text-xs shrink-0">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedIds.size === filteredList.length) {
+                      setSelectedIds(new Set());
+                    } else {
+                      setSelectedIds(new Set(filteredList.map((r) => r.id)));
+                    }
+                  }}
+                  className="flex items-center gap-1.5 font-bold text-slate-700 hover:text-slate-900 cursor-pointer"
+                >
+                  {selectedIds.size === filteredList.length ? (
+                    <CheckSquare className="w-4 h-4 text-indigo-600" />
+                  ) : (
+                    <Square className="w-4 h-4 text-slate-400" />
+                  )}
+                  <span>Tümünü Seç ({filteredList.length})</span>
+                </button>
+                {selectedIds.size > 0 && (
+                  <span className="bg-indigo-100 text-indigo-900 border border-indigo-200 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                    {selectedIds.size} tahdit seçildi
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {selectedIds.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setIsBulkDeleteModalOpen(true)}
+                    className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-1.5 rounded-lg shadow-xs transition-colors cursor-pointer text-xs"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Seçilenleri Sil ({selectedIds.size})</span>
+                  </button>
+                )}
+                {restrictions.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setIsClearAllModalOpen(true)}
+                    className="flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer text-xs"
+                    title="Tüm takyidat hız sınırlarını kalıcı olarak siler"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Tümünü Temizle</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Restrictions List */}
           {filteredList.length === 0 ? (
             <div className="bg-slate-50 border border-dashed border-slate-300 rounded-2xl p-8 text-center space-y-3">
@@ -782,12 +880,15 @@ export const TakyidatModal: React.FC<TakyidatModalProps> = ({
               {filteredList.map((item) => {
                 const isActive = item.status === 'active';
                 const isPlanned = item.status === 'planned';
+                const isChecked = selectedIds.has(item.id);
 
                 return (
                   <div
                     key={item.id}
                     className={`rounded-2xl border p-4 transition-all shadow-xs hover:shadow-md ${
-                      isActive
+                      isChecked
+                        ? 'bg-indigo-50/70 border-indigo-500 ring-2 ring-indigo-200'
+                        : isActive
                         ? 'bg-gradient-to-r from-red-50/70 via-white to-amber-50/40 border-red-300'
                         : isPlanned
                         ? 'bg-amber-50/50 border-amber-300'
@@ -796,6 +897,16 @@ export const TakyidatModal: React.FC<TakyidatModalProps> = ({
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80">
                       <div className="flex items-center gap-3">
+                        {canDelete && (
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => toggleSelect(item.id, e as any)}
+                            className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer shrink-0"
+                            title="Bu tahdidi seç"
+                          />
+                        )}
+
                         {/* Speed Circle Badge (TCDD Style) */}
                         <div
                           className={`w-14 h-14 rounded-full flex flex-col items-center justify-center border-4 shadow-md flex-shrink-0 ${
@@ -884,7 +995,7 @@ export const TakyidatModal: React.FC<TakyidatModalProps> = ({
                           <button
                             type="button"
                             onClick={() => {
-                              onDeleteRestriction(item.id);
+                              setItemToDelete(item);
                             }}
                             className="p-1.5 text-rose-600 hover:text-rose-900 bg-white hover:bg-rose-50 border border-rose-200 rounded-lg transition-colors cursor-pointer"
                             title="Sil"
@@ -917,7 +1028,118 @@ export const TakyidatModal: React.FC<TakyidatModalProps> = ({
               })}
             </div>
           )}
+
+          {/* Hareket Çubuğu (Floating Up/Down Scroll Controls) */}
+          {filteredList.length > 2 && (
+            <div
+              className="absolute right-4 bottom-4 z-20 flex flex-col items-center bg-white/95 backdrop-blur-md border border-slate-300 shadow-xl rounded-2xl p-1 gap-1 text-slate-700 select-none animate-in fade-in"
+              title="Aşağı / Yukarı Hızlı Hareket Çubuğu"
+            >
+              <button
+                type="button"
+                onClick={handleScrollToTop}
+                className="p-2 hover:bg-amber-50 hover:text-amber-700 rounded-xl transition-all cursor-pointer group flex items-center justify-center"
+                title="En Başa Dön (Yukarı)"
+              >
+                <ArrowUp className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+              </button>
+              <div className="w-3 h-[1px] bg-slate-200" />
+              <button
+                type="button"
+                onClick={handleScrollToBottom}
+                className="p-2 hover:bg-amber-50 hover:text-amber-700 rounded-xl transition-all cursor-pointer group flex items-center justify-center"
+                title="En Alta İn (Aşağı)"
+              >
+                <ArrowDown className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
+              </button>
+            </div>
+          )}
         </div>
+
+        {/* SINGLE RESTRICTION DELETE CONFIRMATION MODAL */}
+        <DeleteConfirmModal
+          isOpen={!!itemToDelete}
+          title="Takyidat Hız Kısıtlamasını Sil"
+          itemName={itemToDelete ? `KM ${itemToDelete.startKm}-${itemToDelete.endKm} (${itemToDelete.speedLimit} km/s)` : ''}
+          description="Bu hız tahdidi kaydı kalıcı olarak silinecektir."
+          confirmText="Evet, Tahdidi Sil"
+          cancelText="Vazgeç"
+          isDeleting={isDeleting}
+          onConfirm={async () => {
+            if (!itemToDelete) return;
+            setIsDeleting(true);
+            try {
+              await onDeleteRestriction(itemToDelete.id);
+              setItemToDelete(null);
+            } finally {
+              setIsDeleting(false);
+            }
+          }}
+          onClose={() => setItemToDelete(null)}
+        />
+
+        {/* BULK RESTRICTION DELETE CONFIRMATION MODAL */}
+        <DeleteConfirmModal
+          isOpen={isBulkDeleteModalOpen}
+          title="Seçilen Takyidatları Sil"
+          itemName={`${selectedIds.size} adet hız tahdidi`}
+          description="Seçilen tüm hız tahditleri sistemden kalıcı olarak silinecektir. Bu işlem geri alınamaz."
+          confirmText="Evet, Seçilenleri Sil"
+          cancelText="Vazgeç"
+          isDeleting={isDeleting}
+          onConfirm={async () => {
+            const ids = Array.from(selectedIds);
+            if (ids.length === 0) return;
+            setIsDeleting(true);
+            try {
+              if (onBulkDeleteRestrictions) {
+                await onBulkDeleteRestrictions(ids);
+              } else {
+                for (const id of ids) {
+                  await onDeleteRestriction(id);
+                }
+              }
+              setSelectedIds(new Set());
+              setIsBulkDeleteModalOpen(false);
+            } finally {
+              setIsDeleting(false);
+            }
+          }}
+          onClose={() => setIsBulkDeleteModalOpen(false)}
+        />
+
+        {/* CLEAR ALL RESTRICTIONS CONFIRMATION MODAL */}
+        <DeleteConfirmModal
+          isOpen={isClearAllModalOpen}
+          title="Tüm Takyidatları Temizle"
+          itemName="Tüm Hız Kısıtlamaları"
+          description="Sistemdeki tüm kayıtlı hız tahditleri kalıcı olarak silinecektir. Bu işlem geri alınamaz."
+          confirmText="Evet, Tümünü Temizle"
+          cancelText="Vazgeç"
+          isDeleting={isDeleting}
+          onConfirm={async () => {
+            setIsDeleting(true);
+            try {
+              if (onClearAllRestrictions) {
+                await onClearAllRestrictions();
+              } else {
+                const allIds = restrictions.map((r) => r.id);
+                if (onBulkDeleteRestrictions) {
+                  await onBulkDeleteRestrictions(allIds);
+                } else {
+                  for (const id of allIds) {
+                    await onDeleteRestriction(id);
+                  }
+                }
+              }
+              setSelectedIds(new Set());
+              setIsClearAllModalOpen(false);
+            } finally {
+              setIsDeleting(false);
+            }
+          }}
+          onClose={() => setIsClearAllModalOpen(false)}
+        />
         </>
         )}
 

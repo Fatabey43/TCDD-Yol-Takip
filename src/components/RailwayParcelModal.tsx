@@ -28,6 +28,10 @@ import {
   Layers,
   CheckCircle2,
   AlertTriangle,
+  ArrowUp,
+  ArrowDown,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 
 interface RailwayParcelModalProps {
@@ -39,6 +43,8 @@ interface RailwayParcelModalProps {
   onAddParcel: (parcel: Omit<RailwayParcel, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   onUpdateParcel: (parcel: RailwayParcel) => Promise<void>;
   onDeleteParcel: (id: string) => Promise<void>;
+  onBulkDeleteParcels?: (ids: string[]) => Promise<void>;
+  onClearAllParcels?: () => Promise<void>;
   onBatchImportParcels: (parcels: RailwayParcel[]) => Promise<void>;
   onFocusParcelOnMap: (parcel: RailwayParcel) => void;
 }
@@ -52,6 +58,8 @@ export const RailwayParcelModal: React.FC<RailwayParcelModalProps> = ({
   onAddParcel,
   onUpdateParcel,
   onDeleteParcel,
+  onBulkDeleteParcels,
+  onClearAllParcels,
   onBatchImportParcels,
   onFocusParcelOnMap,
 }) => {
@@ -67,6 +75,23 @@ export const RailwayParcelModal: React.FC<RailwayParcelModalProps> = ({
   const [parcelToDelete, setParcelToDelete] = useState<RailwayParcel | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Bulk selection and deletion states
+  const [selectedParcelIds, setSelectedParcelIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+  const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const listContainerRef = React.useRef<HTMLDivElement | null>(null);
+
+  const handleScrollToTop = () => {
+    listContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleScrollToBottom = () => {
+    if (listContainerRef.current) {
+      listContainerRef.current.scrollTo({ top: listContainerRef.current.scrollHeight, behavior: 'smooth' });
+    }
+  };
+
   // Batch Import Modal State
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [batchLineName, setBatchLineName] = useState('Enveriye - Konya Hattı');
@@ -77,12 +102,15 @@ export const RailwayParcelModal: React.FC<RailwayParcelModalProps> = ({
   const [batchParcelText, setBatchParcelText] = useState('146-1, 150-2, 160-3');
   const [batchAreaM2, setBatchAreaM2] = useState<number | string>('');
   const [batchKmlText, setBatchKmlText] = useState('');
-  const [batchMode, setBatchMode] = useState<'text' | 'kml'>('text');
+  const [batchFiles, setBatchFiles] = useState<File[]>([]);
+  const [batchMode, setBatchMode] = useState<'text' | 'kml'>('kml');
   const [batchFeedback, setBatchFeedback] = useState<string | null>(null);
   const [importNotification, setImportNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Hidden file input refs for direct KML import
   const globalKmlInputRef = React.useRef<HTMLInputElement | null>(null);
+  const batchFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [isDraggingBatch, setIsDraggingBatch] = useState(false);
   const [targetImportLine, setTargetImportLine] = useState<string | null>(null);
 
   // Single Form State
@@ -388,8 +416,62 @@ export const RailwayParcelModal: React.FC<RailwayParcelModalProps> = ({
     setBatchFeedback(null);
 
     if (batchMode === 'kml') {
+      // If multiple KML files were selected
+      if (batchFiles.length > 0) {
+        const allItems: RailwayParcel[] = [];
+        for (let fIdx = 0; fIdx < batchFiles.length; fIdx++) {
+          const file = batchFiles[fIdx];
+          try {
+            const content = await file.text();
+            if (!content) continue;
+            const parsed = parseKmlOrGeoJsonParcels(content);
+
+            const nameMatch = file.name.match(/(\d+)[-_/](\d+)/);
+            const nameAda = nameMatch ? nameMatch[1] : undefined;
+            const nameParsel = nameMatch ? nameMatch[2] : undefined;
+
+            parsed.forEach((p, idx) => {
+              allItems.push({
+                id: `parsel-${Date.now()}-${fIdx}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+                lineName: line,
+                adaNo: p.adaNo && p.adaNo !== '101' ? p.adaNo : (nameAda || p.adaNo || batchAdaNo || '101'),
+                parselNo: p.parselNo && p.parselNo !== '1' ? p.parselNo : (nameParsel || p.parselNo || String(fIdx + 1)),
+                il: p.il || batchIl || 'Eskişehir',
+                ilce: p.ilce || batchIlce || 'Merkez',
+                mahalleKoy: p.mahalleKoy || batchMahalle || '',
+                alanM2: p.alanM2 || (Number(batchAreaM2) || 25000),
+                malik: p.malik || 'TCDD İşletmesi Genel Müdürlüğü',
+                nitelik: p.nitelik || 'Demiryolu Güzergahı',
+                ownershipStatus: 'tcdd',
+                coordinates: p.coordinates || [],
+                notes: `${line} KML Aktarımı (${file.name})`,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              });
+            });
+          } catch (err) {
+            console.error('KML dosya okuma hatası:', file.name, err);
+          }
+        }
+
+        if (allItems.length === 0) {
+          setBatchFeedback('Seçilen dosyalarda geçerli parsel verisi bulunamadı.');
+          return;
+        }
+
+        await onBatchImportParcels(allItems);
+        setIsBatchModalOpen(false);
+        setBatchFiles([]);
+        setBatchKmlText('');
+        setImportNotification({
+          type: 'success',
+          message: `${batchFiles.length} adet dosyadan toplam ${allItems.length} adet parsel "${line}" hattına başarıyla aktarıldı.`,
+        });
+        return;
+      }
+
       if (!batchKmlText.trim()) {
-        setBatchFeedback('Lütfen KML veya GeoJSON içeriğini yapıştırın veya dosya seçin.');
+        setBatchFeedback('Lütfen KML veya GeoJSON dosyası seçin veya metin içeriğini yapıştırın.');
         return;
       }
       const parsed = parseKmlOrGeoJsonParcels(batchKmlText);
@@ -418,6 +500,7 @@ export const RailwayParcelModal: React.FC<RailwayParcelModalProps> = ({
       await onBatchImportParcels(newItems);
       setIsBatchModalOpen(false);
       setBatchKmlText('');
+      setBatchFiles([]);
       return;
     }
 
@@ -511,63 +594,108 @@ export const RailwayParcelModal: React.FC<RailwayParcelModalProps> = ({
     setIsBatchModalOpen(false);
   };
 
-  const handleKmlFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      if (content) {
-        setBatchKmlText(content);
-        setBatchMode('kml');
-      }
-    };
-    reader.readAsText(file);
+  const handleKmlFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const fileArray = Array.from(files);
+
+    setBatchFiles((prev) => {
+      const existing = new Set(prev.map((f) => `${f.name}_${f.size}`));
+      const newOnly = fileArray.filter((f) => !existing.has(`${f.name}_${f.size}`));
+      const combined = [...prev, ...newOnly];
+      setBatchFeedback(`✓ Toplam ${combined.length} adet KML/GeoJSON dosyası eklendi. Aşağıdaki "Mıntıkaya Kaydet" butonu ile aktarabilirsiniz.`);
+      return combined;
+    });
+    setBatchMode('kml');
+
+    if (fileArray.length === 1 && batchFiles.length === 0) {
+      try {
+        const text = await fileArray[0].text();
+        setBatchKmlText(text);
+      } catch {}
+    }
+    e.target.value = '';
   };
 
-  // Direct 1-Click KML Import (from TKGM Parsel Sorgu)
-  const handleDirectKmlFileUpload = async (file: File, targetLine?: string) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const content = event.target?.result as string;
-      if (!content) return;
-
-      const parsed = parseKmlOrGeoJsonParcels(content);
-      if (parsed.length === 0) {
-        setImportNotification({
-          type: 'error',
-          message: 'Seçilen KML dosyasında geçerli parsel veya koordinat verisi bulunamadı.',
-        });
-        return;
+  const handleRemoveBatchFile = (index: number) => {
+    setBatchFiles((prev) => {
+      const updated = prev.filter((_, idx) => idx !== index);
+      if (updated.length === 0) {
+        setBatchFeedback(null);
+      } else {
+        setBatchFeedback(`✓ Kalan ${updated.length} adet dosya aktarıma hazır.`);
       }
+      return updated;
+    });
+  };
 
-      const defaultLine = targetLine || (selectedLineFilter !== 'all' ? selectedLineFilter : 'Enveriye - Konya Hattı');
-      const newItems: RailwayParcel[] = parsed.map((p, idx) => ({
-        id: `parsel-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
-        lineName: defaultLine,
-        adaNo: p.adaNo || '101',
-        parselNo: p.parselNo || String(idx + 1),
-        il: p.il || 'Eskişehir',
-        ilce: p.ilce || 'Merkez',
-        mahalleKoy: p.mahalleKoy || '',
-        alanM2: p.alanM2 || 0,
-        malik: p.malik || 'TCDD İşletmesi Genel Müdürlüğü',
-        nitelik: p.nitelik || 'Demiryolu Güzergahı',
-        ownershipStatus: 'tcdd',
-        coordinates: p.coordinates || [],
-        notes: p.notes || `TKGM Parsel Sorgu KML (${file.name})`,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }));
+  const handleClearBatchFiles = () => {
+    setBatchFiles([]);
+    setBatchKmlText('');
+    setBatchFeedback(null);
+  };
 
-      await onBatchImportParcels(newItems);
+  // Direct 1-Click Multi-File KML Import (from TKGM Parsel Sorgu)
+  const handleDirectKmlFileUpload = async (filesOrFile: FileList | File[] | File, targetLine?: string) => {
+    if (!filesOrFile) return;
+    const files: File[] =
+      filesOrFile instanceof File
+        ? [filesOrFile]
+        : Array.from(filesOrFile);
+
+    if (files.length === 0) return;
+
+    const defaultLine = targetLine || (selectedLineFilter !== 'all' ? selectedLineFilter : 'Enveriye - Konya Hattı');
+    const allItems: RailwayParcel[] = [];
+
+    for (let fIdx = 0; fIdx < files.length; fIdx++) {
+      const file = files[fIdx];
+      try {
+        const content = await file.text();
+        if (!content) continue;
+        const parsed = parseKmlOrGeoJsonParcels(content);
+
+        const nameMatch = file.name.match(/(\d+)[-_/](\d+)/);
+        const nameAda = nameMatch ? nameMatch[1] : undefined;
+        const nameParsel = nameMatch ? nameMatch[2] : undefined;
+
+        parsed.forEach((p, idx) => {
+          allItems.push({
+            id: `parsel-${Date.now()}-${fIdx}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+            lineName: defaultLine,
+            adaNo: p.adaNo && p.adaNo !== '101' ? p.adaNo : (nameAda || p.adaNo || '101'),
+            parselNo: p.parselNo && p.parselNo !== '1' ? p.parselNo : (nameParsel || p.parselNo || String(fIdx + 1)),
+            il: p.il || 'Eskişehir',
+            ilce: p.ilce || 'Merkez',
+            mahalleKoy: p.mahalleKoy || '',
+            alanM2: p.alanM2 || 0,
+            malik: p.malik || 'TCDD İşletmesi Genel Müdürlüğü',
+            nitelik: p.nitelik || 'Demiryolu Güzergahı',
+            ownershipStatus: 'tcdd',
+            coordinates: p.coordinates || [],
+            notes: p.notes || `TKGM KML (${file.name})`,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+        });
+      } catch (err) {
+        console.error('KML okuma hatası:', file.name, err);
+      }
+    }
+
+    if (allItems.length === 0) {
       setImportNotification({
-        type: 'success',
-        message: `${newItems.length} adet parsel "${defaultLine}" hattına başarıyla içe aktarıldı.`,
+        type: 'error',
+        message: 'Seçilen dosyalarda geçerli parsel veya koordinat verisi bulunamadı.',
       });
-    };
-    reader.readAsText(file);
+      return;
+    }
+
+    await onBatchImportParcels(allItems);
+    setImportNotification({
+      type: 'success',
+      message: `${files.length} adet dosyadan toplam ${allItems.length} adet parsel "${defaultLine}" hattına başarıyla aktarıldı.`,
+    });
   };
 
   const triggerGlobalKmlSelect = (targetLine?: string) => {
@@ -658,10 +786,25 @@ export const RailwayParcelModal: React.FC<RailwayParcelModalProps> = ({
                 type="button"
                 onClick={() => triggerGlobalKmlSelect()}
                 className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-xs transition-colors cursor-pointer"
-                title="TKGM Parsel Sorgu'dan indirdiğiniz KML dosyasını doğrudan seçip yükleyin"
+                title="TKGM Parsel Sorgu'dan indirdiğiniz 1 veya birden fazla KML dosyasını (Ctrl+A ile çoklu) seçip tek seferde yükleyin"
               >
                 <Upload className="w-3.5 h-3.5" />
-                <span>KML İçe Aktar</span>
+                <span>📂 KML İçe Aktar (Toplu Dosya Seç)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setBatchFeedback(null);
+                  setBatchFiles([]);
+                  setBatchMode('kml');
+                  setIsBatchModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-xs transition-colors cursor-pointer"
+                title="Tek seferde birden fazla parsel KML dosyasını (Ctrl+A ile çoklu) veya metin listesini toplu yükleyin"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>⚡ Toplu Yükle (KML / Metin)</span>
               </button>
 
               <button
@@ -672,32 +815,20 @@ export const RailwayParcelModal: React.FC<RailwayParcelModalProps> = ({
                 <Plus className="w-3.5 h-3.5" />
                 <span>Yeni Parsel Ekle</span>
               </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setBatchFeedback(null);
-                  setIsBatchModalOpen(true);
-                }}
-                className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-xs transition-colors cursor-pointer"
-                title="Tek seferde birden fazla parsel (Örn: 146-1, 150-2, 160-3) ekleyin veya KML yükleyin"
-              >
-                <Zap className="w-3.5 h-3.5" />
-                <span>⚡ Toplu Yükle</span>
-              </button>
             </div>
           )}
         </div>
 
-        {/* Hidden Global KML File Input */}
+        {/* Hidden Global KML File Input (Supports Multiple File Selection with Ctrl+A) */}
         <input
           ref={globalKmlInputRef}
           type="file"
+          multiple
           accept=".kml,.geojson,.json"
           onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) {
-              handleDirectKmlFileUpload(file, targetImportLine || undefined);
+            const files = e.target.files;
+            if (files && files.length > 0) {
+              handleDirectKmlFileUpload(files, targetImportLine || undefined);
             }
           }}
           className="hidden"
@@ -730,8 +861,69 @@ export const RailwayParcelModal: React.FC<RailwayParcelModalProps> = ({
           </div>
         )}
 
-        {/* Main List Body: Clean Template (Grouped by Line) */}
-        <div className="flex-1 overflow-y-auto min-h-0 custom-scrollbar p-3 sm:p-5 bg-slate-100/60 flex flex-col gap-4">
+        {/* Bulk Action & Selection Toolbar */}
+        {filteredParcels.length > 0 && canDelete && (
+          <div className="bg-slate-100 border-b border-slate-200 px-4 py-2 flex items-center justify-between flex-wrap gap-2 text-xs shrink-0">
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 font-bold text-slate-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={filteredParcels.length > 0 && filteredParcels.every((p) => selectedParcelIds.has(p.id))}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    const next = new Set(selectedParcelIds);
+                    if (checked) {
+                      filteredParcels.forEach((p) => next.add(p.id));
+                    } else {
+                      filteredParcels.forEach((p) => next.delete(p.id));
+                    }
+                    setSelectedParcelIds(next);
+                  }}
+                  className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                />
+                <span>Tümünü Seç ({filteredParcels.length})</span>
+              </label>
+
+              {selectedParcelIds.size > 0 && (
+                <span className="bg-indigo-100 text-indigo-900 border border-indigo-200 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                  {selectedParcelIds.size} parsel seçildi
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {selectedParcelIds.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsBulkDeleteModalOpen(true)}
+                  className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-1.5 rounded-lg shadow-xs transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Seçilenleri Sil ({selectedParcelIds.size})</span>
+                </button>
+              )}
+
+              {parcels.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsClearAllModalOpen(true)}
+                  className="flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+                  title="Sistemdeki tüm kadastro parsellerini kalıcı olarak temizler"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Tüm Parselleri Temizle</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Main List Body: Clean Template with Prominent Draggable Scrollbar & Quick Controls */}
+        <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div
+            ref={listContainerRef}
+            className="flex-1 overflow-y-auto min-h-0 prominent-scrollbar p-3 sm:p-5 bg-slate-100/60 flex flex-col gap-4"
+          >
           {Object.keys(groupedParcels).length === 0 ? (
             <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center flex flex-col items-center justify-center shadow-xs">
               <Landmark className="w-12 h-12 text-slate-300 mb-3" />
@@ -761,11 +953,16 @@ export const RailwayParcelModal: React.FC<RailwayParcelModalProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setIsBatchModalOpen(true)}
+                    onClick={() => {
+                      setBatchFeedback(null);
+                      setBatchFiles([]);
+                      setBatchMode('kml');
+                      setIsBatchModalOpen(true);
+                    }}
                     className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-xs transition-colors cursor-pointer"
                   >
                     <Zap className="w-4 h-4" />
-                    <span>Toplu Yükle (146-1, 150-2...)</span>
+                    <span>⚡ Toplu Yükle (KML / Metin)</span>
                   </button>
                 </div>
               )}
@@ -837,8 +1034,23 @@ export const RailwayParcelModal: React.FC<RailwayParcelModalProps> = ({
                           key={parcel.id}
                           className="px-4 sm:px-5 py-3 hover:bg-slate-50/80 transition-colors flex items-center justify-between flex-wrap gap-3"
                         >
-                          {/* Left: Ada-Parsel (146-1) */}
+                          {/* Left: Checkbox + Ada-Parsel (146-1) */}
                           <div className="flex items-center gap-3">
+                            {canDelete && (
+                              <input
+                                type="checkbox"
+                                checked={selectedParcelIds.has(parcel.id)}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  const next = new Set(selectedParcelIds);
+                                  if (next.has(parcel.id)) next.delete(parcel.id);
+                                  else next.add(parcel.id);
+                                  setSelectedParcelIds(next);
+                                }}
+                                className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer shrink-0"
+                                title="Bu parseli seç"
+                              />
+                            )}
                             <div className="flex flex-col">
                               <div className="flex items-center gap-2">
                                 <span className="font-mono text-sm sm:text-base font-extrabold text-slate-900 tracking-tight">
@@ -962,6 +1174,31 @@ export const RailwayParcelModal: React.FC<RailwayParcelModalProps> = ({
               );
             })
           )}
+          </div>
+
+          {/* Hareket Çubuğu / Hızlı Kaydırma Butonları (Floating Up/Down Scroll Controls) */}
+          <div
+            className="absolute right-4 bottom-4 z-20 flex flex-col items-center bg-white/95 backdrop-blur-md border border-slate-300 shadow-xl rounded-2xl p-1 gap-1 text-slate-700 select-none"
+            title="Aşağı / Yukarı Hızlı Hareket Çubuğu"
+          >
+            <button
+              type="button"
+              onClick={handleScrollToTop}
+              className="p-2 hover:bg-indigo-50 hover:text-indigo-600 rounded-xl transition-all cursor-pointer group flex items-center justify-center"
+              title="En Başa Dön (Yukarı)"
+            >
+              <ArrowUp className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+            </button>
+            <div className="w-4 h-[1px] bg-slate-200" />
+            <button
+              type="button"
+              onClick={handleScrollToBottom}
+              className="p-2 hover:bg-indigo-50 hover:text-indigo-600 rounded-xl transition-all cursor-pointer group flex items-center justify-center"
+              title="En Alta İn (Aşağı)"
+            >
+              <ArrowDown className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
+            </button>
+          </div>
         </div>
 
         {/* Bottom Status Bar */}
@@ -1294,22 +1531,142 @@ export const RailwayParcelModal: React.FC<RailwayParcelModalProps> = ({
                   </div>
                 </>
               ) : (
-                <>
+                <div className="flex flex-col gap-3">
                   <div className="flex items-center justify-between">
-                    <label className="block text-[11px] font-bold text-slate-700">KML / GeoJSON Yükle</label>
-                    <label className="cursor-pointer bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 px-3 py-1 rounded-lg text-xs font-bold transition-colors">
-                      <span>Dosya Seç (.kml)</span>
-                      <input type="file" accept=".kml,.geojson,.json" onChange={handleKmlFileUpload} className="hidden" />
-                    </label>
+                    <div>
+                      <span className="block text-[11px] font-bold text-slate-800">
+                        Toplu KML / GeoJSON Dosyaları Seç
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        TKGM Parsel Sorgu'dan indirdiğiniz birden fazla KML dosyasını tek seferde seçebilirsiniz.
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => batchFileInputRef.current?.click()}
+                      className="cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shadow-xs shrink-0"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Dosyaları Seç (Çoklu)</span>
+                    </button>
+                    <input
+                      ref={batchFileInputRef}
+                      type="file"
+                      multiple
+                      accept=".kml,.geojson,.json"
+                      onChange={handleKmlFileUpload}
+                      className="hidden"
+                    />
                   </div>
-                  <textarea
-                    rows={4}
-                    value={batchKmlText}
-                    onChange={(e) => setBatchKmlText(e.target.value)}
-                    placeholder="KML dosyasını seçin veya metin içeriğini buraya yapıştırın..."
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 font-mono text-xs text-slate-800 focus:bg-white"
-                  />
-                </>
+
+                  {/* Drag and Drop Zone */}
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDraggingBatch(true);
+                    }}
+                    onDragLeave={(e) => {
+                      e.preventDefault();
+                      setIsDraggingBatch(false);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setIsDraggingBatch(false);
+                      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                        const droppedFiles = Array.from(e.dataTransfer.files).filter(
+                          (f) => f.name.endsWith('.kml') || f.name.endsWith('.geojson') || f.name.endsWith('.json')
+                        );
+                        if (droppedFiles.length > 0) {
+                          setBatchFiles((prev) => {
+                            const existing = new Set(prev.map((f) => `${f.name}_${f.size}`));
+                            const newOnly = droppedFiles.filter((f) => !existing.has(`${f.name}_${f.size}`));
+                            const combined = [...prev, ...newOnly];
+                            setBatchFeedback(`✓ ${droppedFiles.length} adet dosya sürüklendi. Toplam ${combined.length} dosya.`);
+                            return combined;
+                          });
+                        }
+                      }
+                    }}
+                    onClick={() => batchFileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${
+                      isDraggingBatch
+                        ? 'border-emerald-500 bg-emerald-50 scale-[1.01]'
+                        : 'border-slate-300 hover:border-emerald-500 bg-slate-50/60 hover:bg-emerald-50/20'
+                    }`}
+                  >
+                    <Upload className="w-7 h-7 mx-auto text-emerald-600 mb-1.5" />
+                    <p className="text-xs font-bold text-slate-800">
+                      KML / GeoJSON dosyalarını buraya sürükleyin veya tıklayarak çoklu seçin
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      💡 Dosya seçim penceresinde <strong>Ctrl + A</strong> tuşlarına basarak veya <strong>Shift</strong> ile tüm parselleri çoklu seçebilirsiniz.
+                    </p>
+                  </div>
+
+                  {/* Selected Files List */}
+                  {batchFiles.length > 0 && (
+                    <div className="border border-emerald-200 bg-emerald-50/40 rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] font-bold text-emerald-950 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Seçilen Dosyalar ({batchFiles.length} adet KML)</span>
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => batchFileInputRef.current?.click()}
+                            className="text-[10px] text-emerald-700 hover:text-emerald-900 font-bold underline cursor-pointer"
+                          >
+                            + Daha Fazla Ekle
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleClearBatchFiles}
+                            className="text-[10px] text-rose-600 hover:text-rose-800 font-bold underline cursor-pointer"
+                          >
+                            Temizle
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="max-h-36 overflow-y-auto space-y-1 prominent-scrollbar pr-1">
+                        {batchFiles.map((f, fIdx) => (
+                          <div
+                            key={fIdx}
+                            className="flex items-center justify-between bg-white px-2.5 py-1 rounded-lg border border-emerald-100 text-[11px]"
+                          >
+                            <span className="font-mono text-slate-700 truncate max-w-[360px]">
+                              {f.name} ({(f.size / 1024).toFixed(1)} KB)
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveBatchFile(fIdx)}
+                              className="text-slate-400 hover:text-rose-600 p-0.5 cursor-pointer"
+                              title="Dosyayı kaldır"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Optional Manual KML Paste Accordion */}
+                  <details className="text-[11px] text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                    <summary className="cursor-pointer font-semibold text-slate-700 select-none">
+                      Metin yapıştırma seçeneği (KML içeriğini doğrudan yapıştırmak için tıklayın)
+                    </summary>
+                    <textarea
+                      rows={3}
+                      value={batchKmlText}
+                      onChange={(e) => setBatchKmlText(e.target.value)}
+                      placeholder="KML dosyasını kopyalayıp buraya yapıştırabilirsiniz..."
+                      className="w-full bg-white border border-slate-300 rounded-lg p-2 font-mono text-xs text-slate-800 focus:bg-white mt-2"
+                    />
+                  </details>
+                </div>
               )}
 
               {/* Action Buttons */}
@@ -1335,7 +1692,7 @@ export const RailwayParcelModal: React.FC<RailwayParcelModalProps> = ({
         </div>
       )}
 
-      {/* DELETE CONFIRMATION MODAL */}
+      {/* DELETE CONFIRMATION MODAL (SINGLE PARCEL) */}
       <DeleteConfirmModal
         isOpen={!!parcelToDelete}
         title="Parseli Sil"
@@ -1355,6 +1712,64 @@ export const RailwayParcelModal: React.FC<RailwayParcelModalProps> = ({
           }
         }}
         onClose={() => setParcelToDelete(null)}
+      />
+
+      {/* BULK DELETE CONFIRMATION MODAL */}
+      <DeleteConfirmModal
+        isOpen={isBulkDeleteModalOpen}
+        title="Seçilen Parselleri Sil"
+        itemName={`${selectedParcelIds.size} adet kadastro parseli`}
+        description="Seçilen tüm kadastro parselleri kalıcı olarak silinecek ve kara listeye alınacaktır. Bu işlem geri alınamaz."
+        confirmText="Evet, Seçilenleri Sil"
+        cancelText="Vazgeç"
+        isDeleting={isBulkDeleting}
+        onConfirm={async () => {
+          setIsBulkDeleting(true);
+          try {
+            const ids = Array.from(selectedParcelIds);
+            if (onBulkDeleteParcels) {
+              await onBulkDeleteParcels(ids);
+            } else {
+              for (const id of ids) {
+                await onDeleteParcel(id);
+              }
+            }
+            setSelectedParcelIds(new Set());
+            setIsBulkDeleteModalOpen(false);
+          } finally {
+            setIsBulkDeleting(false);
+          }
+        }}
+        onClose={() => setIsBulkDeleteModalOpen(false)}
+      />
+
+      {/* CLEAR ALL PARCELS CONFIRMATION MODAL */}
+      <DeleteConfirmModal
+        isOpen={isClearAllModalOpen}
+        title="Tüm Parselleri Temizle"
+        itemName="Tüm Kadastro Parselleri"
+        description="Sistemdeki kayıtlı tüm kadastro parselleri kalıcı olarak silinecektir. Bu işlem geri alınamaz."
+        confirmText="Evet, Tümünü Temizle"
+        cancelText="Vazgeç"
+        isDeleting={isBulkDeleting}
+        onConfirm={async () => {
+          setIsBulkDeleting(true);
+          try {
+            if (onClearAllParcels) {
+              await onClearAllParcels();
+            } else {
+              const allIds = parcels.map((p) => p.id);
+              if (onBulkDeleteParcels) {
+                await onBulkDeleteParcels(allIds);
+              }
+            }
+            setSelectedParcelIds(new Set());
+            setIsClearAllModalOpen(false);
+          } finally {
+            setIsBulkDeleting(false);
+          }
+        }}
+        onClose={() => setIsClearAllModalOpen(false)}
       />
     </div>
   );

@@ -61,6 +61,32 @@
   background: #94a3b8;
 }
 
+/* Prominent Draggable Scrollbar / Hareket Çubuğu */
+.prominent-scrollbar {
+  scrollbar-width: auto;
+  scrollbar-color: #64748b #f1f5f9;
+}
+.prominent-scrollbar::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+.prominent-scrollbar::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 9999px;
+  border: 1px solid #e2e8f0;
+}
+.prominent-scrollbar::-webkit-scrollbar-thumb {
+  background: #64748b;
+  border-radius: 9999px;
+  border: 2px solid #f1f5f9;
+}
+.prominent-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+.prominent-scrollbar::-webkit-scrollbar-thumb:active {
+  background: #2563eb;
+}
+
 /* TCDD Railway Marker Custom Styling */
 .tcdd-marker-cluster-badge,
 .custom-railway-marker,

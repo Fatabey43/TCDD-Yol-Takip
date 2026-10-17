@@ -52,6 +52,7 @@ const LOGS_FILE = path.join(DATA_DIR, 'audit_logs.json');
 const TAKYIDAT_FILE = path.join(DATA_DIR, 'takyidat_restrictions.json');
 const PARCELS_FILE = path.join(DATA_DIR, 'railway_parcels.json');
 const PARCELS_BACKUP_FILE = path.join(DATA_DIR, 'railway_parcels_backup.json');
+const DELETED_PARCELS_FILE = path.join(DATA_DIR, 'deleted_parcels.json');
 const AUTH_SECRET = process.env.AUTH_SECRET || 'tcdd-demiryolu-auth-secret-key-2026';
 
 // Audit Log Interface & Helpers
@@ -234,6 +235,54 @@ function unrecordDeletedTakyidatId(id: string) {
     }
   } catch (err) {
     console.error('Error unrecording deleted takyidat ID:', err);
+  }
+}
+
+// ---------------- KADASTRO (PARCEL) DELETION PERSISTENCE & BLACKLIST ----------------
+function getDeletedParcelIds(): Set<string> {
+  try {
+    if (fs.existsSync(DELETED_PARCELS_FILE)) {
+      const content = fs.readFileSync(DELETED_PARCELS_FILE, 'utf-8');
+      const data = JSON.parse(content);
+      if (Array.isArray(data)) return new Set(data);
+    }
+  } catch (err) {
+    console.error('Error reading deleted parcels file:', err);
+  }
+  return new Set();
+}
+
+function recordDeletedParcelId(id: string) {
+  if (!id) return;
+  try {
+    const set = getDeletedParcelIds();
+    set.add(id);
+    fs.writeFileSync(DELETED_PARCELS_FILE, JSON.stringify(Array.from(set), null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error recording deleted parcel ID:', err);
+  }
+}
+
+function recordDeletedParcelIds(ids: string[]) {
+  if (!Array.isArray(ids) || ids.length === 0) return;
+  try {
+    const set = getDeletedParcelIds();
+    ids.forEach((id) => { if (id) set.add(id); });
+    fs.writeFileSync(DELETED_PARCELS_FILE, JSON.stringify(Array.from(set), null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error recording deleted parcel IDs:', err);
+  }
+}
+
+function unrecordDeletedParcelId(id: string) {
+  try {
+    const set = getDeletedParcelIds();
+    if (set.has(id)) {
+      set.delete(id);
+      fs.writeFileSync(DELETED_PARCELS_FILE, JSON.stringify(Array.from(set), null, 2), 'utf-8');
+    }
+  } catch (err) {
+    console.error('Error unrecording deleted parcel ID:', err);
   }
 }
 
@@ -1227,6 +1276,20 @@ app.delete('/api/points/:id', (req, res) => {
   res.json({ success: true, message: 'Nokta kalıcı olarak silindi', id });
 });
 
+// POST bulk delete points
+app.post('/api/points/bulk-delete', (req, res) => {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Silinecek nokta ID listesi belirtilmedi' });
+  }
+  ids.forEach((id: string) => recordDeletedId(id));
+  const idsSet = new Set(ids);
+  let points = getPoints();
+  points = points.filter((p) => !idsSet.has(p.id));
+  savePoints(points, 'bulk_delete');
+  res.json({ success: true, count: points.length, deletedCount: ids.length });
+});
+
 // POST add note to a point
 app.post('/api/points/:id/notes', (req, res) => {
   const { id } = req.params;
@@ -1628,6 +1691,20 @@ app.delete('/api/takyidat/:id', (req, res) => {
   res.json({ success: true, message: 'Takyidat kaydı silindi' });
 });
 
+// POST bulk delete takyidat restrictions
+app.post('/api/takyidat/bulk-delete', (req, res) => {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Silinecek takyidat ID listesi belirtilmedi' });
+  }
+  ids.forEach((id: string) => recordDeletedTakyidatId(id));
+  const idsSet = new Set(ids);
+  const list = getTakyidatList().filter((item) => !idsSet.has(item.id));
+  saveTakyidatList(list);
+  notifyPointsChanged('takyidat_changed');
+  res.json({ success: true, count: list.length, deletedCount: ids.length });
+});
+
 // ---------------- TAPU KADASTRO & İSTİMLAK (PARSELS) API ----------------
 function getParcels(): any[] {
   try {
@@ -1635,22 +1712,14 @@ function getParcels(): any[] {
     if (fs.existsSync(PARCELS_FILE)) {
       raw = fs.readFileSync(PARCELS_FILE, 'utf-8');
     }
-    // If main file is empty, check backup vault
-    if ((!raw || raw.trim() === '[]' || raw.trim() === '') && fs.existsSync(PARCELS_BACKUP_FILE)) {
-      const backupRaw = fs.readFileSync(PARCELS_BACKUP_FILE, 'utf-8');
-      if (backupRaw && backupRaw.trim() !== '[]' && backupRaw.trim() !== '') {
-        raw = backupRaw;
-        try {
-          fs.writeFileSync(PARCELS_FILE, raw, 'utf-8');
-        } catch {}
-      }
-    }
 
-    if (raw && raw.trim() !== '') {
+    if (raw && raw.trim() !== '' && raw.trim() !== '[]') {
       const list = JSON.parse(raw);
       if (Array.isArray(list)) {
+        const deletedIds = getDeletedParcelIds();
         let hasFixed = false;
         const normalized = list
+          .filter((p) => p && p.id && !deletedIds.has(p.id))
           .map((p, idx) => {
             if (!p || typeof p !== 'object') return null;
             const id = p.id || `parsel-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`;
@@ -1689,11 +1758,11 @@ function getParcels(): any[] {
 
 function saveParcels(list: any[]) {
   try {
-    const json = JSON.stringify(list, null, 2);
+    const deletedIds = getDeletedParcelIds();
+    const clean = (list || []).filter((p) => p && p.id && !deletedIds.has(p.id));
+    const json = JSON.stringify(clean, null, 2);
     fs.writeFileSync(PARCELS_FILE, json, 'utf-8');
-    if (Array.isArray(list) && list.length > 0) {
-      fs.writeFileSync(PARCELS_BACKUP_FILE, json, 'utf-8');
-    }
+    fs.writeFileSync(PARCELS_BACKUP_FILE, json, 'utf-8');
   } catch (err) {
     console.error('Error saving parcels file:', err);
   }
@@ -1709,16 +1778,18 @@ app.get('/api/parcels', (req, res) => {
 // POST /api/parcels (create or replace multiple parcels)
 app.post('/api/parcels', (req, res) => {
   const body = req.body;
+  const deletedIds = getDeletedParcelIds();
   const list = getParcels();
 
   if (Array.isArray(body)) {
     const map = new Map();
     list.forEach((p: any) => {
-      if (p && p.id) map.set(p.id, p);
+      if (p && p.id && !deletedIds.has(p.id)) map.set(p.id, p);
     });
     body.forEach((p: any, idx: number) => {
       if (p && typeof p === 'object') {
         const id = p.id || `parsel-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`;
+        if (deletedIds.has(id)) return; // Silinen parsel asla tekrar kaydedilemez
         const cleanItem = {
           ...p,
           id,
@@ -1746,6 +1817,9 @@ app.post('/api/parcels', (req, res) => {
   }
 
   const id = body.id || `parsel-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  if (deletedIds.has(id)) {
+    return res.status(400).json({ error: 'Bu parsel daha önce silinmiş ve kara listede' });
+  }
   const newParcel = {
     ...body,
     id,
@@ -1812,16 +1886,43 @@ app.put('/api/parcels/:id', (req, res) => {
 // DELETE /api/parcels/:id
 app.delete('/api/parcels/:id', (req, res) => {
   const { id } = req.params;
+  recordDeletedParcelId(id);
   const list = getParcels();
   const filtered = list.filter((p: any) => p.id !== id);
-
-  if (filtered.length === list.length) {
-    return res.status(404).json({ error: 'Kadastro parseli bulunamadı' });
-  }
-
   saveParcels(filtered);
   notifyPointsChanged('parcels_changed');
-  res.json({ success: true, message: 'Kadastro parseli silindi' });
+  res.json({ success: true, message: 'Kadastro parseli silindi ve kara listeye eklendi' });
+});
+
+// DELETE /api/parcels (Delete all parcels)
+app.delete('/api/parcels', (req, res) => {
+  const list = getParcels();
+  const ids = list.map((p: any) => p.id).filter(Boolean);
+  recordDeletedParcelIds(ids);
+  saveParcels([]);
+  notifyPointsChanged('parcels_changed');
+  res.json({ success: true, message: 'Tüm kadastro parselleri kalıcı olarak silindi', count: 0 });
+});
+
+// POST /api/parcels/bulk-delete
+app.post('/api/parcels/bulk-delete', (req, res) => {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Silinecek parsel ID listesi belirtilmedi' });
+  }
+  recordDeletedParcelIds(ids);
+  const idsSet = new Set(ids);
+  const list = getParcels();
+  const remaining = list.filter((p: any) => !idsSet.has(p.id));
+  saveParcels(remaining);
+  notifyPointsChanged('parcels_changed');
+  res.json({ success: true, count: remaining.length, deletedCount: ids.length });
+});
+
+// GET /api/parcels/deleted-ids
+app.get('/api/parcels/deleted-ids', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.json(Array.from(getDeletedParcelIds()));
 });
 
 // POST reset: cleans all points and keeps default points blacklisted

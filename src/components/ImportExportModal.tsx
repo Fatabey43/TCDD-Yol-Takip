@@ -273,112 +273,175 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    const lowerName = file.name.toLowerCase();
+    if (files.length === 1) {
+      const file = files[0];
+      const lowerName = file.name.toLowerCase();
 
-    // If Excel binary file (.xlsx, .xls)
-    if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const buffer = event.target?.result as ArrayBuffer;
-        if (buffer) {
-          setStatusMessage(null);
-          setExcelMergeStats(null);
-          setMergedFullPoints(null);
-          setParsedParcelsPreview([]);
+      // If Excel binary file (.xlsx, .xls)
+      if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          const buffer = event.target?.result as ArrayBuffer;
+          if (buffer) {
+            setStatusMessage(null);
+            setExcelMergeStats(null);
+            setMergedFullPoints(null);
+            setParsedParcelsPreview([]);
 
-          // If auto or crossing, try smart merge
-          if (importCategory === 'auto' || importCategory === 'crossing') {
-            try {
-              const { updatedPoints, stats } = await mergeExcelIntoExistingCrossings(buffer, points);
-              if (stats.matchedCrossingsCount > 0) {
-                setMergedFullPoints(updatedPoints);
-                setExcelMergeStats(stats);
-                setParsedPreview(
-                  updatedPoints.filter((p) =>
-                    stats.details.some((d) => d.pointId === p.id)
-                  )
-                );
-                setStatusMessage({
-                  type: 'success',
-                  text: `Mevcut noktalar içindeki ${stats.matchedCrossingsCount} adet hemzemin geçit KM numarasına göre eşleşti! ${stats.extractedPhotosCount > 0 ? `(${stats.extractedPhotosCount} adet fotoğraf Excel'den çıkarıldı)` : ''}`,
-                });
-                return;
-              }
-            } catch (excelErr) {
-              console.warn('Excel akıllı birleştirme denemesi:', excelErr);
-            }
-          }
-
-          // Check if this is a Culvert (Menfez) Excel sheet
-          if (importCategory === 'auto' || importCategory === 'culvert') {
-            try {
-              const wb = XLSX.read(buffer, { type: 'array' });
-              let allCulvertRecords: any[] = [];
-              for (const sName of wb.SheetNames) {
-                const ws = wb.Sheets[sName];
-                if (ws) {
-                  const sheetCulverts = parseCulvertExcelRows(ws);
-                  if (sheetCulverts.length > 0) {
-                    allCulvertRecords = allCulvertRecords.concat(sheetCulverts);
-                  }
-                }
-              }
-
-              if (allCulvertRecords.length > 0) {
-                const { updatedPoints, stats } = mergeCulvertsIntoExistingPoints(allCulvertRecords, points);
-                if (stats.matchedCulvertsCount > 0) {
+            // If auto or crossing, try smart merge
+            if (importCategory === 'auto' || importCategory === 'crossing') {
+              try {
+                const { updatedPoints, stats } = await mergeExcelIntoExistingCrossings(buffer, points);
+                if (stats.matchedCrossingsCount > 0) {
                   setMergedFullPoints(updatedPoints);
+                  setExcelMergeStats(stats);
                   setParsedPreview(
                     updatedPoints.filter((p) =>
-                      stats.details.some((d) => d.matched && (d.km === p.kmValue || d.km === p.culvert?.mihverKlm))
+                      stats.details.some((d) => d.pointId === p.id)
                     )
                   );
                   setStatusMessage({
                     type: 'success',
-                    text: `Menfez listesindeki ${stats.matchedCulvertsCount} adet menfez KM bazında başarıyla eşleşti!`,
+                    text: `Mevcut noktalar içindeki ${stats.matchedCrossingsCount} adet hemzemin geçit KM numarasına göre eşleşti! ${stats.extractedPhotosCount > 0 ? `(${stats.extractedPhotosCount} adet fotoğraf Excel'den çıkarıldı)` : ''}`,
                   });
                   return;
                 }
+              } catch (excelErr) {
+                console.warn('Excel akıllı birleştirme denemesi:', excelErr);
               }
-            } catch (culvertErr) {
-              console.warn('Menfez Excel ayrıştırma denemesi:', culvertErr);
+            }
+
+            // Check if this is a Culvert (Menfez) Excel sheet
+            if (importCategory === 'auto' || importCategory === 'culvert') {
+              try {
+                const wb = XLSX.read(buffer, { type: 'array' });
+                let allCulvertRecords: any[] = [];
+                for (const sName of wb.SheetNames) {
+                  const ws = wb.Sheets[sName];
+                  if (ws) {
+                    const sheetCulverts = parseCulvertExcelRows(ws);
+                    if (sheetCulverts.length > 0) {
+                      allCulvertRecords = allCulvertRecords.concat(sheetCulverts);
+                    }
+                  }
+                }
+
+                if (allCulvertRecords.length > 0) {
+                  const { updatedPoints, stats } = mergeCulvertsIntoExistingPoints(allCulvertRecords, points);
+                  if (stats.matchedCulvertsCount > 0) {
+                    setMergedFullPoints(updatedPoints);
+                    setParsedPreview(
+                      updatedPoints.filter((p) =>
+                        stats.details.some((d) => d.matched && (d.km === p.kmValue || d.km === p.culvert?.mihverKlm))
+                      )
+                    );
+                    setStatusMessage({
+                      type: 'success',
+                      text: `Menfez listesindeki ${stats.matchedCulvertsCount} adet menfez KM bazında başarıyla eşleşti!`,
+                    });
+                    return;
+                  }
+                }
+              } catch (culvertErr) {
+                console.warn('Menfez Excel ayrıştırma denemesi:', culvertErr);
+              }
+            }
+
+            // Standard Excel parsing
+            const forcedCat = importCategory === 'parcel' ? 'auto' : importCategory;
+            const detected = parseExcelBuffer(buffer, targetLine, forcedCat);
+            if (detected.length === 0) {
+              setStatusMessage({
+                type: 'error',
+                text: 'Excel dosyasında geçerli satır veya KM bilgisi tespit edilemedi.',
+              });
+              setParsedPreview([]);
+            } else {
+              setParsedPreview(detected);
+              setStatusMessage({
+                type: 'success',
+                text: `Excel tablosundan ${detected.length} adet nokta okundu.`,
+              });
             }
           }
+        };
+        reader.readAsArrayBuffer(file);
+        return;
+      }
 
-          // Standard Excel parsing
-          const forcedCat = importCategory === 'parcel' ? 'auto' : importCategory;
-          const detected = parseExcelBuffer(buffer, targetLine, forcedCat);
-          if (detected.length === 0) {
-            setStatusMessage({
-              type: 'error',
-              text: 'Excel dosyasında geçerli satır veya KM bilgisi tespit edilemedi.',
-            });
-            setParsedPreview([]);
-          } else {
-            setParsedPreview(detected);
-            setStatusMessage({
-              type: 'success',
-              text: `Excel tablosundan ${detected.length} adet nokta okundu.`,
-            });
-          }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target?.result as string;
+        if (content) {
+          processFileContent(content, file.name);
         }
       };
-      reader.readAsArrayBuffer(file);
+      reader.readAsText(file);
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      if (content) {
-        processFileContent(content, file.name);
+    // MULTIPLE FILES SELECTED (e.g. multiple KML / GeoJSON / CSV files)
+    setStatusMessage(null);
+    setParsedParcelsPreview([]);
+    setParsedPreview([]);
+
+    let combinedParcels: Partial<RailwayParcel>[] = [];
+    let combinedPoints: Partial<RailwayPoint>[] = [];
+    const forcedPointCat: RailwayPointCategory | 'auto' =
+      importCategory === 'parcel' ? 'auto' : importCategory;
+
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      try {
+        const text = await f.text();
+        if (!text) continue;
+
+        if (
+          importCategory === 'parcel' ||
+          text.includes('<Polygon>') ||
+          text.includes('<LinearRing>') ||
+          text.includes('tkgm-parsel') ||
+          text.includes('Parsel Sorgu')
+        ) {
+          const parcelsFound = parseKmlOrGeoJsonParcels(text);
+          if (parcelsFound.length > 0) {
+            combinedParcels = combinedParcels.concat(parcelsFound);
+            continue;
+          }
+        }
+
+        const pts = parseKML(text, targetLine, forcedPointCat);
+        if (pts.length > 0) {
+          combinedPoints = combinedPoints.concat(pts);
+        }
+      } catch (err) {
+        console.warn('Çoklu dosya okuma hatası:', f.name, err);
       }
-    };
-    reader.readAsText(file);
+    }
+
+    if (combinedParcels.length > 0) {
+      setParsedParcelsPreview(combinedParcels);
+      setImportCategory('parcel');
+      setStatusMessage({
+        type: 'success',
+        text: `${files.length} dosyadan toplam ${combinedParcels.length} adet Tapu Kadastro ve Kamulaştırma Parseli tespit edildi.`,
+      });
+    } else if (combinedPoints.length > 0) {
+      setParsedPreview(combinedPoints);
+      setStatusMessage({
+        type: 'success',
+        text: `${files.length} dosyadan toplam ${combinedPoints.length} adet nokta başarıyla okundu.`,
+      });
+    } else {
+      setStatusMessage({
+        type: 'error',
+        text: 'Seçilen dosyalarda geçerli nokta veya kadastro parseli tespit edilemedi.',
+      });
+    }
   };
 
   const handleParseRawText = () => {
@@ -560,6 +623,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                 <input
                   ref={fileInputRef}
                   type="file"
+                  multiple
                   accept=".kml,.geojson,.json,.csv,.xlsx,.xls,.txt"
                   onChange={handleFileUpload}
                   className="hidden"
@@ -582,7 +646,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                   </span>
                 </div>
                 <p className="text-xs font-bold text-slate-800">
-                  KML, Excel (.xlsx), GeoJSON veya CSV dosyasını seçin ya da sürükleyin
+                  KML, Excel (.xlsx), GeoJSON veya CSV dosyalarını seçin ya da sürükleyin (Çoklu Dosya / Ctrl+A)
                 </p>
                 <p className="text-[11px] text-slate-500 mt-0.5">
                   {importCategory === 'parcel'
