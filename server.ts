@@ -51,6 +51,7 @@ const STATE_FILE = path.join(DATA_DIR, 'database_state.json');
 const LOGS_FILE = path.join(DATA_DIR, 'audit_logs.json');
 const TAKYIDAT_FILE = path.join(DATA_DIR, 'takyidat_restrictions.json');
 const PARCELS_FILE = path.join(DATA_DIR, 'railway_parcels.json');
+const PARCELS_BACKUP_FILE = path.join(DATA_DIR, 'railway_parcels_backup.json');
 const AUTH_SECRET = process.env.AUTH_SECRET || 'tcdd-demiryolu-auth-secret-key-2026';
 
 // Audit Log Interface & Helpers
@@ -1630,8 +1631,22 @@ app.delete('/api/takyidat/:id', (req, res) => {
 // ---------------- TAPU KADASTRO & İSTİMLAK (PARSELS) API ----------------
 function getParcels(): any[] {
   try {
+    let raw = '';
     if (fs.existsSync(PARCELS_FILE)) {
-      const raw = fs.readFileSync(PARCELS_FILE, 'utf-8');
+      raw = fs.readFileSync(PARCELS_FILE, 'utf-8');
+    }
+    // If main file is empty, check backup vault
+    if ((!raw || raw.trim() === '[]' || raw.trim() === '') && fs.existsSync(PARCELS_BACKUP_FILE)) {
+      const backupRaw = fs.readFileSync(PARCELS_BACKUP_FILE, 'utf-8');
+      if (backupRaw && backupRaw.trim() !== '[]' && backupRaw.trim() !== '') {
+        raw = backupRaw;
+        try {
+          fs.writeFileSync(PARCELS_FILE, raw, 'utf-8');
+        } catch {}
+      }
+    }
+
+    if (raw && raw.trim() !== '') {
       const list = JSON.parse(raw);
       if (Array.isArray(list)) {
         let hasFixed = false;
@@ -1674,7 +1689,11 @@ function getParcels(): any[] {
 
 function saveParcels(list: any[]) {
   try {
-    fs.writeFileSync(PARCELS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+    const json = JSON.stringify(list, null, 2);
+    fs.writeFileSync(PARCELS_FILE, json, 'utf-8');
+    if (Array.isArray(list) && list.length > 0) {
+      fs.writeFileSync(PARCELS_BACKUP_FILE, json, 'utf-8');
+    }
   } catch (err) {
     console.error('Error saving parcels file:', err);
   }

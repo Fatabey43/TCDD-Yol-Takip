@@ -2,7 +2,14 @@ import { RailwayPoint, PointNote, PointPhoto, TakyidatSpeedRestriction, RailwayP
 import { DEFAULT_SAMPLE_IDS } from '../data/samplePoints.ts';
 import { extractKmFromText } from '../utils/categoryColors.ts';
 import { compressImage } from '../utils/imageCompressor.ts';
-import { savePointsToIDB, getPointsFromIDB, clearPointsFromIDB } from '../utils/dbStorage.ts';
+import {
+  savePointsToIDB,
+  getPointsFromIDB,
+  clearPointsFromIDB,
+  saveParcelsToIDB,
+  getParcelsFromIDB,
+  clearParcelsFromIDB,
+} from '../utils/dbStorage.ts';
 import { sortPointsByKm, parseKmToNumber } from '../utils/kmUtils.ts';
 
 const LOCAL_STORAGE_KEY = 'demiryolu_km_points_cache';
@@ -1325,13 +1332,14 @@ export async function deleteTakyidatById(id: string): Promise<boolean> {
 
 // ---------------- DEMİRYOLU ARAZİSİ & TAPU KADASTRO (PARSEL) API ----------------
 const PARCELS_STORAGE_KEY = 'demiryolu_parcels_cache_v1';
+const PARCELS_BACKUP_STORAGE_KEY = 'demiryolu_parcels_backup_v1';
 
 export function getLocalCachedParcels(): RailwayParcel[] {
   try {
-    const raw = localStorage.getItem(PARCELS_STORAGE_KEY);
+    const raw = localStorage.getItem(PARCELS_STORAGE_KEY) || localStorage.getItem(PARCELS_BACKUP_STORAGE_KEY);
     if (raw) {
       const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) return arr;
+      if (Array.isArray(arr) && arr.length > 0) return arr;
     }
   } catch {}
   return [];
@@ -1339,35 +1347,65 @@ export function getLocalCachedParcels(): RailwayParcel[] {
 
 export function saveLocalCachedParcels(list: RailwayParcel[]): void {
   try {
-    localStorage.setItem(PARCELS_STORAGE_KEY, JSON.stringify(list));
-  } catch {}
+    const json = JSON.stringify(list);
+    localStorage.setItem(PARCELS_STORAGE_KEY, json);
+    if (list.length > 0) {
+      localStorage.setItem(PARCELS_BACKUP_STORAGE_KEY, json);
+    }
+    // Also save to IndexedDB asynchronously for GB-capacity and persistence across sessions/iframes
+    saveParcelsToIDB(list).catch(() => {});
+  } catch {
+    // If localStorage quota exceeded, IndexedDB still saves full coordinates
+    saveParcelsToIDB(list).catch(() => {});
+  }
 }
 
 export async function fetchParcelsList(): Promise<RailwayParcel[]> {
+  let local = getLocalCachedParcels();
+  let idbParcels: RailwayParcel[] = [];
+  try {
+    idbParcels = await getParcelsFromIDB();
+  } catch {}
+
+  // Merge local and IDB parcels to form the best local state
+  const localMap = new Map<string, RailwayParcel>();
+  local.forEach((p) => {
+    if (p && p.id) localMap.set(p.id, p);
+  });
+  idbParcels.forEach((p) => {
+    if (p && p.id) localMap.set(p.id, p);
+  });
+  const mergedLocal = Array.from(localMap.values());
+
   try {
     const res = await fetch(`/api/parcels?_t=${Date.now()}`, { cache: 'no-store' });
     if (res.ok) {
-      const list = await res.json();
-      if (Array.isArray(list)) {
-        if (list.length > 0) {
-          saveLocalCachedParcels(list);
-          return list;
+      const serverList = await res.json();
+      if (Array.isArray(serverList)) {
+        if (serverList.length > 0) {
+          // Merge server with any local items that might have been added offline
+          const combinedMap = new Map<string, RailwayParcel>();
+          mergedLocal.forEach((p) => combinedMap.set(p.id, p));
+          serverList.forEach((p) => combinedMap.set(p.id, p));
+          const allParcels = Array.from(combinedMap.values());
+          saveLocalCachedParcels(allParcels);
+          return allParcels;
         } else {
-          const local = getLocalCachedParcels();
-          if (local.length > 0) {
-            // Server was empty, restore server data from local cache
-            saveParcelsBatch(local).catch(() => {});
-            return local;
+          // Server was empty, but if local/IDB has items, NEVER wipe! Restore server!
+          if (mergedLocal.length > 0) {
+            saveParcelsBatch(mergedLocal).catch(() => {});
+            saveLocalCachedParcels(mergedLocal);
+            return mergedLocal;
           }
-          saveLocalCachedParcels([]);
           return [];
         }
       }
     }
   } catch (err) {
-    console.warn('Parseller sunucudan çekilemedi, yerel önbellek kullanılıyor:', err);
+    console.warn('Parseller sunucudan çekilemedi, yerel ve IndexedDB önbelleği kullanılıyor:', err);
   }
-  return getLocalCachedParcels();
+
+  return mergedLocal;
 }
 
 export async function saveNewParcel(
@@ -1387,7 +1425,8 @@ export async function saveNewParcel(
   };
 
   const local = getLocalCachedParcels();
-  saveLocalCachedParcels([newObj, ...local.filter((p) => p.id !== newObj.id)]);
+  const updatedList = [newObj, ...local.filter((p) => p.id !== newObj.id)];
+  saveLocalCachedParcels(updatedList);
 
   try {
     const res = await fetch('/api/parcels', {
@@ -1397,8 +1436,8 @@ export async function saveNewParcel(
     });
     if (res.ok) {
       const created = await res.json();
-      const updatedList = [created, ...local.filter((p) => p.id !== tempId && p.id !== created.id)];
-      saveLocalCachedParcels(updatedList);
+      const finalList = [created, ...local.filter((p) => p.id !== tempId && p.id !== created.id)];
+      saveLocalCachedParcels(finalList);
       return created;
     }
   } catch (err) {
@@ -1441,7 +1480,12 @@ export async function updateExistingParcel(entry: RailwayParcel): Promise<Railwa
 
 export async function deleteParcelById(id: string): Promise<boolean> {
   const local = getLocalCachedParcels();
-  saveLocalCachedParcels(local.filter((p) => p.id !== id));
+  const filtered = local.filter((p) => p.id !== id);
+  saveLocalCachedParcels(filtered);
+  try {
+    const idbList = await getParcelsFromIDB();
+    saveParcelsToIDB(idbList.filter((p) => p.id !== id)).catch(() => {});
+  } catch {}
 
   try {
     const res = await fetch(`/api/parcels/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -1453,13 +1497,22 @@ export async function deleteParcelById(id: string): Promise<boolean> {
 
 export async function saveParcelsBatch(list: RailwayParcel[]): Promise<{ success: boolean; count: number }> {
   const local = getLocalCachedParcels();
+  let idbList: RailwayParcel[] = [];
+  try {
+    idbList = await getParcelsFromIDB();
+  } catch {}
+
   const map = new Map<string, RailwayParcel>();
   local.forEach((p) => {
+    if (p && p.id) map.set(p.id, p);
+  });
+  idbList.forEach((p) => {
     if (p && p.id) map.set(p.id, p);
   });
   list.forEach((p) => {
     if (p && p.id) map.set(p.id, p);
   });
+
   const combined = Array.from(map.values());
   saveLocalCachedParcels(combined);
 
@@ -1467,7 +1520,7 @@ export async function saveParcelsBatch(list: RailwayParcel[]): Promise<{ success
     const res = await fetch('/api/parcels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(list),
+      body: JSON.stringify(combined),
     });
     if (res.ok) {
       return await res.json();

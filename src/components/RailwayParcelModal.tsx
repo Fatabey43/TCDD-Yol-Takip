@@ -826,8 +826,8 @@ export const RailwayParcelModal: React.FC<RailwayParcelModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Scrollable Rows: 146-1 | Haritada Göster | Düzenle | KML Aktar */}
-                  <div className="divide-y divide-slate-100 overflow-y-auto max-h-[52vh] sm:max-h-[58vh] custom-scrollbar">
+                  {/* Full List of Rows: 146-1 | Haritada Göster | Düzenle | KML Aktar */}
+                  <div className="divide-y divide-slate-100">
                     {items.map((parcel) => {
                       const displayCode = `${parcel.adaNo}-${parcel.parselNo}`;
                       const hasDetails = parcel.mahalleKoy || parcel.ilce || parcel.alanM2;
